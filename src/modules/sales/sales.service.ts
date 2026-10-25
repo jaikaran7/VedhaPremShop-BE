@@ -163,7 +163,7 @@ export class SalesService {
     return rows.map((sale) => {
       const totalPaise = toPaise(Number(sale.totalAmount));
       const paidPaise = paidBySale.get(sale.id) ?? 0;
-      const extras = toPaise(Number(sale.amaliAmount)) + toPaise(Number(sale.marketFeeAmount)) + toPaise(Number(sale.otherCharges));
+      const extras = toPaise(Number(sale.amaliAmount)) + toPaise(Number(sale.marketFeeAmount)) + toPaise(Number(sale.otherCharges)) + toPaise(Number(sale.taxAmount));
       const pendingTenders = (sale.pendingTenders ?? []) as { method: string; amountPaise: number }[];
       return {
         id: sale.id,
@@ -196,6 +196,8 @@ export class SalesService {
           amaliAmount: Number(sale.amaliAmount),
           marketFeeAmount: Number(sale.marketFeeAmount),
           otherCharges: Number(sale.otherCharges),
+          taxPercent: sale.taxPercent == null ? null : Number(sale.taxPercent),
+          taxAmount: Number(sale.taxAmount),
           productSubtotal: Number(sale.productSubtotal),
           totalAdditionalCharges: fromPaise(extras),
           finalInvoiceAmount: Number(sale.totalAmount),

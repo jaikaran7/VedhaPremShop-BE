@@ -7,6 +7,7 @@ import { PaymentsService } from '../payments/payments.service';
 import { PurchasesService } from '../purchases/purchases.service';
 import { SalesService } from '../sales/sales.service';
 import { VendorsService } from '../vendors/vendors.service';
+import { ReportsService } from './reports.service';
 
 // shortcut: the frontend computes every report from this snapshot, so sales, payments and purchases are capped at the
 // newest 5000 each. Move the report maths into SQL before real volumes approach that.
@@ -24,7 +25,11 @@ export class ReportsController {
     private readonly vendors: VendorsService,
     private readonly inventory: InventoryService,
     private readonly purchases: PurchasesService,
+    private readonly reports: ReportsService,
   ) {}
+
+  /** Lot breakdown: per lot and mark, what arrived, sold, remains, the cost and profit, and anything that needs review. */
+  @Get('differential') differential(@CurrentActor() a: Actor) { return this.reports.differential(a); }
 
   @Get()
   async snapshot(@CurrentActor() a: Actor) {

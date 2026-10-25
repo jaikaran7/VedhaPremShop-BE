@@ -1,25 +1,27 @@
 import { toPaise } from '../../common/money';
 import type { Db } from '../../database/prisma.service';
 
-export interface VendorBalance {
-  purchasedPaise: number;
+export interface VendorTotals {
+  openingPaise: number;
+  billedPaise: number;
   paidPaise: number;
 }
 
 /**
- * What we owe each vendor, derived and never stored: purchase bills (goods + the bill's purchase expenses)
- * minus payments made (expenses that name the vendor). Pass a vendor id to read just that one.
+ * The three numbers every vendor figure is derived from (see vendor-ledger.calc.ts), for all vendors, or one when an id is
+ * given, in a fixed three queries. Payments are expenses that name the vendor.
  */
-export async function vendorBalances(db: Db, organizationId: string, vendorId?: string): Promise<Map<string, VendorBalance>> {
-  const bills = await db.purchase.groupBy({
-    by: ['vendorPartyId'], where: { organizationId, ...(vendorId && { vendorPartyId: vendorId }) }, _sum: { netAmount: true },
-  });
-  const payments = await db.expense.groupBy({
-    by: ['vendorPartyId'], where: { organizationId, vendorPartyId: vendorId ?? { not: null } }, _sum: { amount: true },
-  });
-  const balances = new Map<string, VendorBalance>();
-  const entry = (id: string) => balances.get(id) ?? balances.set(id, { purchasedPaise: 0, paidPaise: 0 }).get(id)!;
-  for (const row of bills) entry(row.vendorPartyId).purchasedPaise = toPaise(Number(row._sum.netAmount ?? 0));
-  for (const row of payments) if (row.vendorPartyId) entry(row.vendorPartyId).paidPaise = toPaise(Number(row._sum.amount ?? 0));
-  return balances;
+export async function vendorTotals(db: Db, organizationId: string, vendorId?: string): Promise<Map<string, VendorTotals>> {
+  const [vendors, bills, payments] = await Promise.all([
+    db.vendor.findMany({ where: { organizationId, ...(vendorId && { partyId: vendorId }) }, select: { partyId: true, openingBalance: true } }),
+    db.purchase.groupBy({ by: ['vendorPartyId'], where: { organizationId, ...(vendorId && { vendorPartyId: vendorId }) }, _sum: { netAmount: true } }),
+    db.expense.groupBy({ by: ['vendorPartyId'], where: { organizationId, vendorPartyId: vendorId ?? { not: null } }, _sum: { amount: true } }),
+  ]);
+  const billed = new Map(bills.map((row) => [row.vendorPartyId, toPaise(Number(row._sum.netAmount ?? 0))]));
+  const paid = new Map(payments.map((row) => [row.vendorPartyId, toPaise(Number(row._sum.amount ?? 0))]));
+  return new Map(vendors.map((v) => [v.partyId, {
+    openingPaise: toPaise(Number(v.openingBalance)),
+    billedPaise: billed.get(v.partyId) ?? 0,
+    paidPaise: paid.get(v.partyId) ?? 0,
+  }]));
 }

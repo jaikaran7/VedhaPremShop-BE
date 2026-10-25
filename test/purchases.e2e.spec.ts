@@ -76,9 +76,8 @@ describe('vendor bill', () => {
     ]));
   });
 
-  it('is Owner/Manager only, refuses a duplicate bill, bad input, repeated marks and stock-posting statuses', async () => {
-    await h.http().get('/api/v1/purchases').set(cashier).expect(403);
-    await h.http().post('/api/v1/purchases').set(cashier).send(bill()).expect(403);
+  it('staff can enter bills; refuses a duplicate bill, bad input, repeated marks and stock-posting statuses', async () => {
+    await h.http().get('/api/v1/purchases').set(cashier).expect(200);
     await create();
     await h.http().post('/api/v1/purchases').set(manager).send(bill({ lotNumber: 'LOT YY' })).expect(409);
     await h.http().post('/api/v1/purchases').set(manager).send(bill({ billNumber: 'V-2', items: [{ markCode: 'A', bags: 0, weightKg: 10, ratePerKg: 5 }] })).expect(400);
@@ -213,5 +212,6 @@ describe('reports snapshot', () => {
     expect(res.body.purchases).toHaveLength(9);
     expect(res.body.vendors).toHaveLength(3);
     await h.http().get('/api/v1/reports').set(cashier).expect(403);
+    await h.http().get('/api/v1/reports/differential').set(cashier).expect(403);
   });
 });

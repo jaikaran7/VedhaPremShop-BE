@@ -1,18 +1,22 @@
-import { ConflictException, Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
+import { Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { audit } from '../../common/audit';
-import type { Actor } from '../../common/auth/actor';
+import { type Actor, isOwner, isManagement } from '../../common/auth/actor';
+import { OrgCache } from '../../common/cache';
 import { fromDbDate, toDbDate } from '../../common/dates';
 import { fromPaise, toPaise } from '../../common/money';
 import { PrismaService, TX_OPTIONS } from '../../database/prisma.service';
 import type { CashAccount, Expense, ExpenseCategory } from '../../generated/prisma/client';
-import { vendorBalances } from '../vendors/payables';
 import type { CreateExpenseCategoryDto, RecordExpenseDto } from './expenses.dto';
 
 /** The frontend treats an expense in this category as a payment to a vendor (matched by name, ignoring case). */
 export const VENDOR_PAYMENT_CATEGORY = 'purchase payments';
 export const isVendorPaymentCategory = (name: string): boolean => name.trim().toLowerCase() === VENDOR_PAYMENT_CATEGORY;
 
-const accountView = (row: CashAccount) => ({ id: row.id, name: row.name, kind: row.kind, openingBalance: Number(row.openingBalance) });
+const ACCOUNTS_TTL_MS = 60_000;
+const accountView = (row: CashAccount, owner: boolean) => ({
+  id: row.id, name: row.name, kind: row.kind,
+  ...(owner && { openingBalance: Number(row.openingBalance), openingDate: fromDbDate(row.openingDate) }),
+});
 const categoryView = (row: ExpenseCategory) => ({ id: row.id, name: row.name, trackingCategory: row.trackingCategory });
 
 type ExpenseRow = Expense & { category: ExpenseCategory; account: CashAccount; vendorParty: { name: string } | null };
@@ -39,16 +43,22 @@ function expenseView(row: ExpenseRow) {
 
 @Injectable()
 export class ExpensesService {
-  constructor(private readonly db: PrismaService) {}
+  constructor(private readonly db: PrismaService, private readonly cache: OrgCache) {}
 
-  async accounts(actor: Actor) {
-    const rows = await this.db.cashAccount.findMany({ where: { organizationId: actor.organizationId }, orderBy: { createdAt: 'asc' } });
-    return rows.map(accountView);
+  /** Account names are for everyone (the expense form needs them); opening balances are the Owner's alone. */
+  accounts(actor: Actor) {
+    const owner = isOwner(actor);
+    return this.cache.get(actor.organizationId, `accounts:${owner}`, ACCOUNTS_TTL_MS, async () => {
+      const rows = await this.db.cashAccount.findMany({ where: { organizationId: actor.organizationId }, orderBy: { createdAt: 'asc' } });
+      return rows.map((row) => accountView(row, owner));
+    });
   }
 
-  async categories(actor: Actor) {
-    const rows = await this.db.expenseCategory.findMany({ where: { organizationId: actor.organizationId }, orderBy: { createdAt: 'asc' } });
-    return rows.map(categoryView);
+  categories(actor: Actor) {
+    return this.cache.get(actor.organizationId, 'expense-categories', ACCOUNTS_TTL_MS, async () => {
+      const rows = await this.db.expenseCategory.findMany({ where: { organizationId: actor.organizationId }, orderBy: { createdAt: 'asc' } });
+      return rows.map(categoryView);
+    });
   }
 
   /** An existing name (any case) returns the existing category instead of a duplicate. */
@@ -64,17 +74,18 @@ export class ExpensesService {
     }, TX_OPTIONS);
   }
 
+  /** Owner and Manager see every expense; a salesperson sees the ones they recorded themselves. */
   async list(actor: Actor, limit: number, offset: number) {
     const rows = await this.db.expense.findMany({
-      where: { organizationId: actor.organizationId }, include: INCLUDE,
+      where: { organizationId: actor.organizationId, ...(!isManagement(actor) && { recordedByUserId: actor.userId }) }, include: INCLUDE,
       orderBy: [{ expenseDate: 'desc' }, { createdAt: 'desc' }], take: limit, skip: offset,
     });
     return rows.map(expenseView);
   }
 
   /**
-   * One payment out of one account. A Purchase Payments expense must name its vendor and cannot exceed what is owed to them;
-   * the vendor row is locked while the balance is read so two payments cannot both spend the last rupee owed.
+   * One payment out of one account. A Purchase Payments expense must name its vendor. Paying more than is owed is allowed:
+   * the extra is an advance with the vendor and the next bill uses it (see vendors/vendor-ledger.calc.ts).
    */
   async record(actor: Actor, dto: RecordExpenseDto) {
     const id = await this.db.$transaction(async (tx) => {
@@ -87,16 +98,9 @@ export class ExpensesService {
       let vendorName: string | null = null;
       if (isVendorPaymentCategory(category.name)) {
         if (!dto.vendorId) throw new UnprocessableEntityException('Choose the vendor this payment is for.');
-        const locked = await tx.$queryRaw<{ party_id: string }[]>`
-          SELECT party_id FROM vendors WHERE party_id = ${dto.vendorId}::uuid AND organization_id = ${actor.organizationId}::uuid FOR UPDATE`;
-        if (!locked[0]) throw new NotFoundException('Vendor not found');
-        const vendor = await tx.party.findUniqueOrThrow({ where: { id: dto.vendorId }, select: { name: true } });
-        vendorName = vendor.name;
-        const balance = (await vendorBalances(tx, actor.organizationId, dto.vendorId)).get(dto.vendorId);
-        const owedPaise = (balance?.purchasedPaise ?? 0) - (balance?.paidPaise ?? 0);
-        if (amountPaise > owedPaise) {
-          throw new ConflictException(`₹${dto.amount.toLocaleString('en-IN')} is more than the ₹${fromPaise(owedPaise).toLocaleString('en-IN')} owed to ${vendor.name}.`);
-        }
+        const vendor = await tx.vendor.findFirst({ where: { partyId: dto.vendorId, organizationId: actor.organizationId }, select: { party: { select: { name: true } } } });
+        if (!vendor) throw new NotFoundException('Vendor not found');
+        vendorName = vendor.party.name;
       } else if (dto.vendorId) {
         throw new UnprocessableEntityException('A vendor can only be attached to a Purchase Payments expense.');
       }

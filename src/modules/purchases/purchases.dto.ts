@@ -11,6 +11,8 @@ const EXPENSE_TYPES = ['FREIGHT', 'HAMALI', 'MANDI_TAX', 'COMMISSION', 'OTHER'] 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 export class PurchaseItemDto {
+  @ApiPropertyOptional({ description: 'On an edit: the id of the existing line this row replaces. Ignored when creating.' })
+  @IsOptional() @IsString() @MaxLength(64) id?: string;
   @ApiProperty() @IsString() @Length(1, 16) markCode!: string;
   @ApiProperty() @IsInt() @Min(1) @Max(1_000_000) bags!: number;
   @ApiProperty() @IsNumber({ maxDecimalPlaces: 3 }) @IsPositive() @Max(100_000_000) weightKg!: number;
@@ -47,6 +49,11 @@ export class CreatePurchaseDto {
   @IsOptional() @IsArray() @ArrayMaxSize(30) @ValidateNested({ each: true }) @Type(() => PurchaseExpenseDto)
   expenses?: PurchaseExpenseDto[];
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(1000) notes?: string;
+}
+
+/** A correction: the whole bill as it should be, plus why. Before receipt anything can change; after receipt only rates and charges. */
+export class UpdatePurchaseDto extends CreatePurchaseDto {
+  @ApiProperty({ description: 'Why the bill is being corrected; kept in the edit history.' }) @IsString() @Length(3, 500) reason!: string;
 }
 
 export class ReceivingAllocationDto {

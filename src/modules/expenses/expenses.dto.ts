@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, IsNumber, IsOptional, IsPositive, IsString, IsUUID, Length, Matches, Max, MaxLength } from 'class-validator';
+import { IsIn, IsNumber, IsOptional, IsPositive, IsString, IsUUID, Length, Matches, Max, MaxLength, Min } from 'class-validator';
 import { ListQueryDto } from '../../common/http/list-query.dto';
 import { PAYMENT_METHODS } from '../sales/sales.dto';
 import type { PaymentMethod } from '../sales/sales.calc';
@@ -27,3 +27,13 @@ export class RecordExpenseDto {
 }
 
 export class ExpensesQueryDto extends ListQueryDto {}
+
+export class SetOpeningBalanceDto {
+  @ApiProperty({ description: 'Real money in this account at the start of `openingDate`.' })
+  @IsNumber({ maxDecimalPlaces: 2 }) @Min(-100_000_000) @Max(100_000_000) openingBalance!: number;
+  @ApiProperty({ example: '2026-10-26' }) @Matches(/^\d{4}-\d{2}-\d{2}$/) openingDate!: string;
+}
+
+export class DayQueryDto {
+  @ApiProperty({ example: '2026-10-26' }) @Matches(/^\d{4}-\d{2}-\d{2}$/) date!: string;
+}

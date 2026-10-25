@@ -1,8 +1,8 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query, Res } from '@nestjs/common';
+import type { Response } from 'express';
 import { ApiTags } from '@nestjs/swagger';
 import { type Actor, CurrentActor, Management } from '../../common/auth/actor';
-import { ListQueryDto } from '../../common/http/list-query.dto';
-import { OpeningStockDto, StockAdjustmentDto } from './inventory.dto';
+import { MovementsQueryDto, OpeningStockDto, StockAdjustmentDto } from './inventory.dto';
 import { InventoryService } from './inventory.service';
 
 @ApiTags('inventory')
@@ -14,8 +14,10 @@ export class InventoryController {
   @Get('lots/:id') lot(@CurrentActor() a: Actor, @Param('id', ParseUUIDPipe) id: string) { return this.inventory.getLot(a, id); }
 
   @Get('stock/movements')
-  movements(@CurrentActor() a: Actor, @Query() q: ListQueryDto) {
-    return this.inventory.listMovements(a, q.limit, q.offset);
+  async movements(@CurrentActor() a: Actor, @Query() q: MovementsQueryDto, @Res({ passthrough: true }) res: Response) {
+    const { rows, total } = await this.inventory.listMovements(a, q);
+    res.setHeader('X-Total-Count', String(total));
+    return rows;
   }
 
   @Management() @Post('stock/adjustments') adjust(@CurrentActor() a: Actor, @Body() dto: StockAdjustmentDto) { return this.inventory.adjust(a, dto); }

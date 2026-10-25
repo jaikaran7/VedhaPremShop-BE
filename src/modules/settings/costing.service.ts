@@ -1,5 +1,6 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { audit } from '../../common/audit';
+import { OrgCache } from '../../common/cache';
 import type { Actor } from '../../common/auth/actor';
 import { type Db, PrismaService, TX_OPTIONS } from '../../database/prisma.service';
 import type { CostingExpenseType, SellingMarginComponent } from '../../generated/prisma/client';
@@ -19,12 +20,14 @@ export async function loadCostingInputs(db: Db, organizationId: string): Promise
   };
 }
 
+const MASTER_TTL_MS = 60_000;
+
 @Injectable()
 export class CostingService {
-  constructor(private readonly db: PrismaService) {}
+  constructor(private readonly db: PrismaService, private readonly cache: OrgCache) {}
 
-  async settings(actor: Actor) {
-    return (await loadCostingInputs(this.db, actor.organizationId)).settings;
+  settings(actor: Actor) {
+    return this.cache.get(actor.organizationId, 'costing:settings', MASTER_TTL_MS, async () => (await loadCostingInputs(this.db, actor.organizationId)).settings);
   }
 
   /** Applies to receivings done afterwards; a received lot keeps the rate snapshot it was finalized with. */
@@ -36,12 +39,15 @@ export class CostingService {
         details: `Default selling margin set to ₹${dto.defaultSellingMarginPerKg}/kg for new receivings`, metadata: { ...dto },
       });
     }, TX_OPTIONS);
+    this.cache.invalidate(actor.organizationId);
     return this.settings(actor);
   }
 
-  async listExpenseTypes(actor: Actor) {
-    const rows = await this.db.costingExpenseType.findMany({ where: { organizationId: actor.organizationId }, orderBy: [{ kind: 'asc' }, { createdAt: 'asc' }] });
-    return rows.map(expenseTypeView);
+  listExpenseTypes(actor: Actor) {
+    return this.cache.get(actor.organizationId, 'costing:expense-types', MASTER_TTL_MS, async () => {
+      const rows = await this.db.costingExpenseType.findMany({ where: { organizationId: actor.organizationId }, orderBy: [{ kind: 'asc' }, { createdAt: 'asc' }] });
+      return rows.map(expenseTypeView);
+    });
   }
 
   async createExpenseType(actor: Actor, dto: CreateExpenseTypeDto) {
@@ -70,9 +76,11 @@ export class CostingService {
     }, TX_OPTIONS);
   }
 
-  async listMargins(actor: Actor) {
-    const rows = await this.db.sellingMarginComponent.findMany({ where: { organizationId: actor.organizationId }, orderBy: { createdAt: 'asc' } });
-    return rows.map(marginView);
+  listMargins(actor: Actor) {
+    return this.cache.get(actor.organizationId, 'costing:margins', MASTER_TTL_MS, async () => {
+      const rows = await this.db.sellingMarginComponent.findMany({ where: { organizationId: actor.organizationId }, orderBy: { createdAt: 'asc' } });
+      return rows.map(marginView);
+    });
   }
 
   async createMargin(actor: Actor, dto: CreateMarginDto) {

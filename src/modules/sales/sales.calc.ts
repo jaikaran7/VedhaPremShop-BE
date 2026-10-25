@@ -33,11 +33,38 @@ export interface BillTotals {
   subtotalPaise: number;
   amaliPaise: number;
   marketFeePaise: number;
+  /** Optional GST/tax; part of the total. */
+  taxPaise: number;
+  taxPercent: number | null;
   totalPaise: number;
 }
 
+/** Optional tax on a bill: a percentage of the invoice value, or a rupee amount typed in. Not both. */
+export interface TaxInput {
+  percent?: number;
+  amount?: number;
+}
+
+/**
+ * Tax in paise. A percentage applies to product + Amali + market fee (the whole invoice before tax) and is rounded to the
+ * whole rupee, half up, like every other line on a bill; a typed amount is kept exactly as entered.
+ */
+export function taxFor(basePaise: number, tax?: TaxInput): { taxPaise: number; taxPercent: number | null } {
+  const percent = tax?.percent;
+  const amount = tax?.amount;
+  if (percent !== undefined && amount !== undefined) {
+    throw new UnprocessableEntityException('Enter the tax as a percentage or as an amount, not both.');
+  }
+  if (percent !== undefined) {
+    const thousandths = Math.round(percent * 1000);
+    // paise × thousandths-of-a-percent ÷ 10,000,000 = rupees; +5,000,000 rounds half up.
+    return { taxPaise: Math.floor((basePaise * thousandths + 5_000_000) / 10_000_000) * 100, taxPercent: percent };
+  }
+  return { taxPaise: amount !== undefined ? toPaise(amount) : 0, taxPercent: null };
+}
+
 /** Same arithmetic as the frontend (trading.saleLineAmount + sale-charges.calculateSaleCharges), in integers. */
-export function priceBill(items: LineInput[], settings: ChargeSettings): BillTotals {
+export function priceBill(items: LineInput[], settings: ChargeSettings, tax?: TaxInput): BillTotals {
   const lines = items.map((item) => {
     const grams = item.bagWeights.reduce((sum, bag) => sum + toGrams(bag.weightKg), 0);
     const ratePaise = toPaise(item.ratePerKg);
@@ -48,7 +75,8 @@ export function priceBill(items: LineInput[], settings: ChargeSettings): BillTot
   const subtotalPaise = lines.reduce((sum, line) => sum + line.amountPaise, 0);
   const amaliPaise = settings.amaliEnabled ? totalBags * toPaise(settings.amaliPerBag) : 0;
   const marketFeePaise = settings.marketFeeEnabled ? totalBags * toPaise(settings.marketFeePerBag) : 0;
-  return { lines, totalBags, totalGrams, subtotalPaise, amaliPaise, marketFeePaise, totalPaise: subtotalPaise + amaliPaise + marketFeePaise };
+  const taxed = taxFor(subtotalPaise + amaliPaise + marketFeePaise, tax);
+  return { lines, totalBags, totalGrams, subtotalPaise, amaliPaise, marketFeePaise, ...taxed, totalPaise: subtotalPaise + amaliPaise + marketFeePaise + taxed.taxPaise };
 }
 
 /** Lines that hit the same lot and mark draw on one stock row; deduct them together. */

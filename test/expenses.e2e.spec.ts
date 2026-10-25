@@ -39,11 +39,16 @@ const expense = (over: Record<string, unknown> = {}) => ({ categoryId: transport
 const pay = (over: Record<string, unknown> = {}) => h.http().post('/api/v1/expenses').set(manager).send(expense({ categoryId: vendorPayId, vendorId: murade.id, ...over }));
 
 describe('cash accounts and categories', () => {
-  it('lists the seeded accounts and categories, Owner and Manager only', async () => {
+  it('lists the seeded accounts and categories for everyone, opening balances for the Owner only', async () => {
     const accounts = (await h.http().get('/api/v1/cash-accounts').set(owner).expect(200)).body;
     expect(accounts.map((a: { kind: string }) => a.kind).sort()).toEqual(['BANK', 'CASH', 'UPI']);
     expect((await h.http().get('/api/v1/expense-categories').set(manager).expect(200)).body).toHaveLength(7);
-    for (const path of ['cash-accounts', 'expense-categories', 'expenses']) await h.http().get(`/api/v1/${path}`).set(cashier).expect(403);
+    expect(accounts[0]).toHaveProperty('openingBalance');
+    const staffView = (await h.http().get('/api/v1/cash-accounts').set(cashier).expect(200)).body as Record<string, unknown>[];
+    expect(staffView).toHaveLength(3);
+    for (const a of staffView) expect(a).not.toHaveProperty('openingBalance');
+    expect((await h.http().get('/api/v1/cash-accounts').set(manager).expect(200)).body[0]).not.toHaveProperty('openingBalance');
+    await h.http().get('/api/v1/expense-categories').set(cashier).expect(200);
   });
 
   it('adds a category once, whatever the letter case, and tracks it against a collection bucket', async () => {
@@ -53,7 +58,7 @@ describe('cash accounts and categories', () => {
     expect(again.body.id).toBe(created.body.id);
     expect((await h.http().get('/api/v1/expense-categories').set(manager)).body).toHaveLength(8);
     await h.http().post('/api/v1/expense-categories').set(manager).send({ name: ' ' }).expect(422);
-    await h.http().post('/api/v1/expense-categories').set(cashier).send({ name: 'x' }).expect(403);
+    await h.http().post('/api/v1/expense-categories').set(cashier).send({ name: 'Staff added' }).expect(201);
   });
 });
 
@@ -67,7 +72,7 @@ describe('recording an expense', () => {
     expect((await h.http().get('/api/v1/expenses').set(manager)).body).toHaveLength(3);
   });
 
-  it('refuses bad input, unknown records, another organization and the salesperson; rows cannot be changed in SQL', async () => {
+  it('refuses bad input, unknown records and another organization; rows cannot be changed in SQL', async () => {
     await h.http().post('/api/v1/expenses').set(manager).send(expense({ amount: 0 })).expect(400);
     await h.http().post('/api/v1/expenses').set(manager).send(expense({ amount: -5 })).expect(400);
     await h.http().post('/api/v1/expenses').set(manager).send(expense({ amount: 10.123 })).expect(400);
@@ -75,7 +80,6 @@ describe('recording an expense', () => {
     await h.http().post('/api/v1/expenses').set(manager).send(expense({ paymentMethod: 'BITCOIN' })).expect(400);
     await h.http().post('/api/v1/expenses').set(manager).send(expense({ categoryId: '00000000-0000-4000-8000-000000000000' })).expect(404);
     await h.http().post('/api/v1/expenses').set(manager).send(expense({ accountId: '00000000-0000-4000-8000-000000000000' })).expect(404);
-    await h.http().post('/api/v1/expenses').set(cashier).send(expense()).expect(403);
     await h.http().post('/api/v1/expenses').set(manager).send(expense({ vendorId: murade.id })).expect(422); // vendor on a non-vendor category
 
     const org = await h.db.organization.create({ data: { slug: 'other-mandi', shopName: 'Other Mandi' } });
@@ -108,25 +112,26 @@ describe('vendor payments reduce what we owe', () => {
     expect((await vendor('Kaveri Traders')).payableAmount).toBe(1_006_800); // other vendors untouched
   });
 
-  it('a new vendor bill adds to the payable, and paying more than is owed is refused', async () => {
+  it('paying more than is owed becomes an advance, and the next vendor bill uses it up', async () => {
     const products = (await h.http().get('/api/v1/settings/products').set(owner)).body as { id: string; code: string }[];
-    await h.http().post('/api/v1/purchases').set(manager).send({
-      billNumber: 'V-9', vendorId: murade.id, productId: products.find((p) => p.code === 'ONIONS')!.id, date: '2026-10-25', lotNumber: 'LOT NEW',
-      items: [{ markCode: 'ZZ', bags: 10, weightKg: 500, ratePerKg: 40 }], expenses: [{ expenseTypeId: 'custom', expenseTypeName: 'Tarp', amount: 500 }],
+    const newBill = (billNumber: string, lotNumber: string, kg: number) => h.http().post('/api/v1/purchases').set(manager).send({
+      billNumber, vendorId: murade.id, productId: products.find((p) => p.code === 'ONIONS')!.id, date: '2026-10-25', lotNumber,
+      items: [{ markCode: 'ZZ', bags: 10, weightKg: kg, ratePerKg: 40 }], expenses: [{ expenseTypeId: 'custom', expenseTypeName: 'Tarp', amount: 500 }],
     }).expect(201);
+    await newBill('V-9', 'LOT NEW', 500); // 20,000 + 500 = 20,500 owed
     expect((await vendor('Murade Traders')).payableAmount).toBe(708_500 + 20_500);
-    await pay({ amount: 729_000.01 }).expect(409);
     await pay({ amount: 729_000 }).expect(201); // exactly what is owed
-    expect((await vendor('Murade Traders')).payableAmount).toBe(0);
-    await pay({ amount: 0.01 }).expect(409);
+    expect(await vendor('Murade Traders')).toMatchObject({ payableAmount: 0, advanceAmount: 0 });
+    await pay({ amount: 5_000 }).expect(201); // too much: ₹5,000 advance
+    expect(await vendor('Murade Traders')).toMatchObject({ payableAmount: 0, advanceAmount: 5_000 });
+    await newBill('V-10', 'LOT NEW2', 300); // 12,000 + 500 = 12,500; the 5,000 advance is used automatically
+    expect(await vendor('Murade Traders')).toMatchObject({ payableAmount: 7_500, advanceAmount: 0, totalPurchases: 708_500 + 20_500 + 12_500 });
   });
 
-  it('ten simultaneous payments cannot overspend the balance', async () => {
-    await pay({ amount: 708_500 - 100 }).expect(201); // ₹100 left
-    const results = await Promise.all(Array.from({ length: 10 }, () => pay({ amount: 60 })));
-    expect(results.filter((r) => r.status === 201)).toHaveLength(1); // 100 / 60 = one payment fits
-    expect(results.filter((r) => r.status === 409)).toHaveLength(9);
-    expect((await vendor('Murade Traders')).payableAmount).toBe(40);
+  it('ten simultaneous payments all record and add up exactly', async () => {
+    const results = await Promise.all(Array.from({ length: 10 }, () => pay({ amount: 100.25 })));
+    expect(results.map((r) => r.status)).toEqual(Array(10).fill(201));
+    expect((await vendor('Murade Traders')).payableAmount).toBe(708_500 - 1002.5);
   });
 });
 

@@ -161,6 +161,7 @@ model Organization {
   expenses            Expense[]
   purchaseItems       PurchaseItem[]
   purchaseExpenses    PurchaseExpense[]
+  purchaseRevisions   PurchaseRevision[]
   memberships         Membership[]
   linkedParties       Party[]                  @relation("PartyLinkedOrganization")
   refreshTokens       RefreshToken[]
@@ -298,6 +299,8 @@ model Vendor {
   partyId        String       @id @map("party_id") @db.Uuid
   organizationId String       @map("organization_id") @db.Uuid
   code           String
+  /// Owed to the vendor before this system was used (negative = advance we had already paid). Paid off first.
+  openingBalance Decimal      @default(0) @map("opening_balance") @db.Decimal(14, 2)
   status         MasterStatus @default(ACTIVE)
   createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
 
@@ -415,6 +418,7 @@ model StockMovement {
   performedBy  User?        @relation(fields: [performedByUserId], references: [id])
 
   @@index([organizationId, createdAt])
+  @@index([organizationId, movementDate])
   @@index([lotMarkId])
   @@map("stock_movements")
 }
@@ -441,6 +445,9 @@ model Sale {
   amaliAmount      Decimal    @map("amali_amount") @db.Decimal(14, 2)
   marketFeeAmount  Decimal    @map("market_fee_amount") @db.Decimal(14, 2)
   otherCharges     Decimal    @default(0) @map("other_charges") @db.Decimal(14, 2)
+  /// Optional GST/tax on the bill: the % entered (if any) and the resulting amount, which is part of the total.
+  taxPercent       Decimal?   @map("tax_percent") @db.Decimal(6, 3)
+  taxAmount        Decimal    @default(0) @map("tax_amount") @db.Decimal(14, 2)
   totalAmount      Decimal    @map("total_amount") @db.Decimal(14, 2)
   paymentType      String     @map("payment_type")
   creditDays       Int?       @map("credit_days")
@@ -691,12 +698,13 @@ model Purchase {
   createdByName       String                @map("created_by_name")
   createdAt           DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  organization Organization      @relation(fields: [organizationId], references: [id])
-  vendorParty  Party             @relation(fields: [vendorPartyId], references: [id])
-  product      Product           @relation(fields: [productId], references: [id])
+  organization Organization       @relation(fields: [organizationId], references: [id])
+  vendorParty  Party              @relation(fields: [vendorPartyId], references: [id])
+  product      Product            @relation(fields: [productId], references: [id])
   items        PurchaseItem[]
   expenses     PurchaseExpense[]
   lots         Lot[]
+  revisions    PurchaseRevision[]
 
   @@unique([organizationId, vendorPartyId, billNumber])
   @@index([organizationId, purchaseDate])
@@ -751,6 +759,8 @@ model CashAccount {
   name           String
   kind           CashAccountKind
   openingBalance Decimal         @default(0) @map("opening_balance") @db.Decimal(14, 2)
+  /// The day the opening balance is true for (start of that day). Earlier receipts and expenses do not count.
+  openingDate    DateTime        @default(dbgenerated("CURRENT_DATE")) @map("opening_date") @db.Date
   createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
 
   organization Organization @relation(fields: [organizationId], references: [id])
@@ -799,4 +809,28 @@ model Expense {
   @@index([organizationId, expenseDate])
   @@index([vendorPartyId])
   @@map("expenses")
+}
+
+/// Every correction to a vendor bill: who, why, and the bill before and after. Append-only.
+model PurchaseRevision {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  purchaseId     String   @map("purchase_id") @db.Uuid
+  revisionNo     Int      @map("revision_no")
+  editedByUserId String   @map("edited_by_user_id") @db.Uuid
+  editedByName   String   @map("edited_by_name")
+  editedByRole   UserRole @map("edited_by_role")
+  reason         String
+  /// [{ field, label, from, to }] — the human-readable list shown as "previous → current".
+  changes        Json
+  before         Json
+  after          Json
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  purchase     Purchase     @relation(fields: [purchaseId], references: [id])
+
+  @@unique([purchaseId, revisionNo])
+  @@index([purchaseId])
+  @@map("purchase_revisions")
 }

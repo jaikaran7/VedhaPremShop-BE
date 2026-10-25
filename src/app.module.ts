@@ -3,6 +3,7 @@ import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AuthGuard } from './common/auth/auth.guard';
+import { CacheModule } from './common/cache';
 import { AllExceptionsFilter } from './common/http/exception.filter';
 import { ENV, type Env } from './config/env';
 import { DbModule } from './database/prisma.service';
@@ -31,6 +32,7 @@ export class AppModule {
         // shortcut: in-memory rate-limit counters are per instance; move to a shared store when running >1 instance.
         ThrottlerModule.forRoot({ throttlers: [{ ttl: 60_000, limit: 300 }], skipIf: () => env.nodeEnv === 'test' }),
         DbModule,
+        CacheModule,
         AuthModule, UsersModule, SettingsModule, CustomersModule, VendorsModule, InventoryModule, ExpensesModule, PurchasesModule, SalesModule, PaymentsModule, ReportsModule, AuditModule,
       ],
       controllers: [HealthController],

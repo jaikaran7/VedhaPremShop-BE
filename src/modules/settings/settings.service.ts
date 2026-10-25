@@ -1,15 +1,23 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { audit } from '../../common/audit';
+import { OrgCache } from '../../common/cache';
 import { type Actor, isManagement } from '../../common/auth/actor';
 import { PrismaService, TX_OPTIONS } from '../../database/prisma.service';
 import type { Mark, Product } from '../../generated/prisma/client';
 import type { CompanySettingsDto, CreateMarkDto, SaleChargeSettingsDto, UpdateMarkDto, UpdateProductDto } from './settings.dto';
 
+/** Masters change rarely and are read on almost every screen; any write clears them (OrgCache). */
+const MASTER_TTL_MS = 60_000;
+
 @Injectable()
 export class SettingsService {
-  constructor(private readonly db: PrismaService) {}
+  constructor(private readonly db: PrismaService, private readonly cache: OrgCache) {}
 
-  async company(actor: Actor): Promise<CompanySettingsDto> {
+  company(actor: Actor): Promise<CompanySettingsDto> {
+    return this.cache.get(actor.organizationId, 'company', MASTER_TTL_MS, () => this.loadCompany(actor));
+  }
+
+  private async loadCompany(actor: Actor): Promise<CompanySettingsDto> {
     const org = await this.org(actor);
     return {
       shopName: org.shopName,
@@ -30,10 +38,15 @@ export class SettingsService {
       await tx.organization.update({ where: { id: actor.organizationId }, data: { ...dto } });
       await audit(tx, actor, { action: 'UPDATE_SETTINGS', entity: 'COMPANY', entityId: 'CONFIG', details: 'Updated wholesale company details' });
     }, TX_OPTIONS);
+    this.cache.invalidate(actor.organizationId); // so the answer below is the saved value, not the cached one
     return this.company(actor);
   }
 
-  async saleCharges(actor: Actor): Promise<SaleChargeSettingsDto> {
+  saleCharges(actor: Actor): Promise<SaleChargeSettingsDto> {
+    return this.cache.get(actor.organizationId, 'sale-charges', MASTER_TTL_MS, () => this.loadSaleCharges(actor));
+  }
+
+  private async loadSaleCharges(actor: Actor): Promise<SaleChargeSettingsDto> {
     const org = await this.org(actor);
     return {
       amaliPerBag: Number(org.amaliPerBag),
@@ -52,12 +65,15 @@ export class SettingsService {
         details: 'Updated Amali and market fee settings for new sales', metadata: { ...dto },
       });
     }, TX_OPTIONS);
+    this.cache.invalidate(actor.organizationId);
     return this.saleCharges(actor);
   }
 
-  async listMarks(actor: Actor) {
-    const rows = await this.db.mark.findMany({ where: { organizationId: actor.organizationId }, orderBy: { createdAt: 'asc' } });
-    return rows.map((row) => this.markView(row, actor));
+  listMarks(actor: Actor) {
+    return this.cache.get(actor.organizationId, `marks:${isManagement(actor)}`, MASTER_TTL_MS, async () => {
+      const rows = await this.db.mark.findMany({ where: { organizationId: actor.organizationId }, orderBy: { createdAt: 'asc' } });
+      return rows.map((row) => this.markView(row, actor));
+    });
   }
 
   async createMark(actor: Actor, dto: CreateMarkDto) {
@@ -81,9 +97,11 @@ export class SettingsService {
     }, TX_OPTIONS);
   }
 
-  async listProducts(actor: Actor) {
-    const rows = await this.db.product.findMany({ where: { organizationId: actor.organizationId }, orderBy: { createdAt: 'asc' } });
-    return rows.map(productView);
+  listProducts(actor: Actor) {
+    return this.cache.get(actor.organizationId, 'products', MASTER_TTL_MS, async () => {
+      const rows = await this.db.product.findMany({ where: { organizationId: actor.organizationId }, orderBy: { createdAt: 'asc' } });
+      return rows.map(productView);
+    });
   }
 
   async createProduct(actor: Actor, name: string) {

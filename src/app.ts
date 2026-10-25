@@ -21,7 +21,7 @@ export async function createApp(env: Env, options: { logger?: false } = {}): Pro
     origin: env.corsOrigins,
     credentials: true,
     allowedHeaders: ['Content-Type', 'Accept', 'X-Requested-With', 'Idempotency-Key', 'X-Request-Id'],
-    exposedHeaders: ['X-Request-Id'],
+    exposedHeaders: ['X-Request-Id', 'X-Total-Count'],
   });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, stopAtFirstError: false }));
   app.enableShutdownHooks();

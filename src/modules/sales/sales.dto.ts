@@ -47,6 +47,10 @@ export class CreateSaleDto {
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(1000) notes?: string;
   @ApiPropertyOptional({ description: 'Total the cashier saw; a mismatch returns 409' })
   @IsOptional() @IsNumber({ maxDecimalPlaces: 2 }) @IsPositive() totalAmount?: number;
+  @ApiPropertyOptional({ description: 'Optional GST/tax as a percentage of the invoice value (0–100). Use this or taxAmount, not both.' })
+  @IsOptional() @IsNumber({ maxDecimalPlaces: 3 }) @Min(0) @Max(100) taxPercent?: number;
+  @ApiPropertyOptional({ description: 'Optional GST/tax as a rupee amount, added to the total.' })
+  @IsOptional() @IsNumber({ maxDecimalPlaces: 2 }) @Min(0) @Max(100_000_000) taxAmount?: number;
   @ApiPropertyOptional({ description: 'Bill date (YYYY-MM-DD). Any day other than today needs Owner approval.', example: '2026-10-24' })
   @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) date?: string;
   @ApiPropertyOptional({ description: 'Why the bill is dated another day' })

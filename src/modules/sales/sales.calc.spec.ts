@@ -85,3 +85,34 @@ describe('settle', () => {
     expect(() => settle({ ...base, hasCustomer: false, carriedPaise: 600_000, tenders: [{ method: 'CASH', amount: 4001 }] })).toThrow('cannot exceed');
   });
 });
+
+describe('optional GST / tax', () => {
+  const lines = [{ lotNumber: 'LOT AP', markCode: 'AA', ratePerKg: 47, bagWeights: bags(50.5, 50) }];
+  // 100.5 kg × ₹47 = ₹4,724; Amali 2 × 20 = 40; market fee 2 × 10 = 20 → ₹4,784 before tax
+
+  it('no tax by default: total unchanged', () => {
+    expect(priceBill(lines, charges)).toMatchObject({ taxPaise: 0, taxPercent: null, totalPaise: 478_400 });
+  });
+
+  it('percentage applies to the whole invoice and rounds to the rupee: 5% of ₹4,784 = ₹239.20 → ₹239', () => {
+    expect(priceBill(lines, charges, { percent: 5 })).toMatchObject({ taxPaise: 23_900, taxPercent: 5, totalPaise: 502_300 });
+    expect(priceBill(lines, charges, { percent: 18 })).toMatchObject({ taxPaise: 86_100, totalPaise: 564_500 }); // 861.12 → 861
+    expect(priceBill(lines, charges, { percent: 2.5 })).toMatchObject({ taxPaise: 12_000 }); // 119.6 → 120
+    expect(priceBill(lines, charges, { percent: 0 })).toMatchObject({ taxPaise: 0, taxPercent: 0, totalPaise: 478_400 });
+  });
+
+  it('a typed amount is kept exactly and added to the total', () => {
+    expect(priceBill(lines, charges, { amount: 250.5 })).toMatchObject({ taxPaise: 25_050, taxPercent: null, totalPaise: 503_450 });
+  });
+
+  it('percentage and amount together are refused', () => {
+    expect(() => priceBill(lines, charges, { percent: 5, amount: 100 })).toThrow('not both');
+  });
+
+  it('total = product + Amali + market fee + tax, always', () => {
+    for (const percent of [0.5, 5, 12, 18, 28]) {
+      const bill = priceBill(lines, charges, { percent });
+      expect(bill.totalPaise).toBe(bill.subtotalPaise + bill.amaliPaise + bill.marketFeePaise + bill.taxPaise);
+    }
+  });
+});

@@ -5,7 +5,7 @@ import { fromGrams, fromPaise, toGrams, toPaise } from '../../common/money';
 import { nextSequence } from '../../common/sequences';
 import type { Tx } from '../../database/prisma.service';
 import type { Organization, Prisma, SaleStatus } from '../../generated/prisma/client';
-import { applyStockChange, findLotMark } from '../inventory/stock-ledger';
+import { applyStockChange } from '../inventory/stock-ledger';
 import { customerBalancePaise, lockCustomer, releaseSaleAllocations, settleCustomer } from '../payments/receivables';
 import { type PaymentMethod, priceBill, settle, stockDraws } from './sales.calc';
 import type { CreateSaleDto } from './sales.dto';
@@ -62,7 +62,7 @@ export async function insertBill(tx: Tx, actor: Actor, org: Organization, input:
   const bill = priceBill(input.items, {
     amaliPerBag: Number(org.amaliPerBag), marketFeePerBag: Number(org.marketFeePerBag),
     amaliEnabled: org.amaliEnabled, marketFeeEnabled: org.marketFeeEnabled,
-  });
+  }, { percent: input.taxPercent, amount: input.taxAmount });
   if (input.totalAmount !== undefined && toPaise(input.totalAmount) !== bill.totalPaise) {
     throw new ConflictException(`Bill total is ₹${fromPaise(bill.totalPaise)} with current rates and charges. Review the bill and confirm again.`);
   }
@@ -71,13 +71,18 @@ export async function insertBill(tx: Tx, actor: Actor, org: Organization, input:
     defaultCreditDays: opts.customer?.creditDays, saleDate: opts.saleDate, hasCustomer: !!opts.customer, carriedPaise: opts.carriedPaise,
   });
 
-  const draws: { lotMarkId: string; lotNumber: string; markCode: string; bags: number; grams: number }[] = [];
-  for (const draw of stockDraws(bill.lines)) {
-    const found = await findLotMark(tx, actor.organizationId, draw.lotNumber, draw.markCode);
+  // One query for every line's lot mark, however many lines the bill has.
+  const wanted = stockDraws(bill.lines);
+  const marks = await tx.lotMark.findMany({
+    where: { organizationId: actor.organizationId, OR: wanted.map((d) => ({ markCode: d.markCode.trim().toUpperCase(), lot: { lotNumber: d.lotNumber.trim().toUpperCase() } })) },
+    include: { lot: { select: { lotNumber: true, productId: true } } },
+  });
+  const draws: { lotMarkId: string; lotNumber: string; markCode: string; bags: number; grams: number }[] = wanted.map((draw) => {
+    const found = marks.find((m) => m.markCode === draw.markCode.trim().toUpperCase() && m.lot.lotNumber === draw.lotNumber.trim().toUpperCase());
     if (!found) throw new NotFoundException(`${draw.lotNumber} has no mark ${draw.markCode}`);
     if (found.lot.productId !== product.id) throw new UnprocessableEntityException(`${found.lot.lotNumber} is not ${product.name} stock`);
-    draws.push({ ...draw, lotMarkId: found.lotMark.id, lotNumber: found.lot.lotNumber, markCode: found.lotMark.markCode });
-  }
+    return { ...draw, lotMarkId: found.id, lotNumber: found.lot.lotNumber, markCode: found.markCode };
+  });
   const lotMarkOf = (lotNumber: string, markCode: string) =>
     draws.find((d) => d.lotNumber === lotNumber.trim().toUpperCase() && d.markCode === markCode.trim().toUpperCase())!;
 
@@ -101,6 +106,8 @@ export async function insertBill(tx: Tx, actor: Actor, org: Organization, input:
     marketFeeEnabled: org.marketFeeEnabled,
     amaliAmount: fromPaise(bill.amaliPaise),
     marketFeeAmount: fromPaise(bill.marketFeePaise),
+    taxPercent: bill.taxPercent,
+    taxAmount: fromPaise(bill.taxPaise),
     totalAmount: fromPaise(bill.totalPaise),
     paymentType: settlement.paymentType,
     creditDays: settlement.creditDays,

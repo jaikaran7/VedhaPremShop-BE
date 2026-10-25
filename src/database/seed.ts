@@ -63,7 +63,7 @@ export async function seedDevData(db: PrismaClient, password: string): Promise<{
       vendorIds.set(v.key, party.id);
     }
 
-    await tx.cashAccount.createMany({ data: fixture.cashAccounts.map((a) => ({ organizationId, name: a.name, kind: a.kind as CashAccountKind, openingBalance: a.openingBalance })) });
+    await tx.cashAccount.createMany({ data: fixture.cashAccounts.map((a) => ({ organizationId, name: a.name, kind: a.kind as CashAccountKind, openingBalance: a.openingBalance, openingDate: toDbDate(OPENING_DATE) })) });
     await tx.expenseCategory.createMany({ data: fixture.expenseCategories.map((c) => ({ organizationId, name: c.name, trackingCategory: c.trackingCategory as CollectionCategory | null })) });
 
     const expenseTypeIds = new Map<string, string>();

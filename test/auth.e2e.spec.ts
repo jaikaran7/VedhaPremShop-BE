@@ -72,10 +72,14 @@ describe('cookie session', () => {
 });
 
 describe('role permissions are enforced by the API', () => {
-  it('salesperson cannot adjust stock, see vendors, change settings or list users', async () => {
+  it('salesperson cannot adjust stock, see what vendors are owed, change settings or list users', async () => {
     const s = auth(await h.token('salesperson'));
     await h.http().post('/api/v1/stock/adjustments').set(s).send({ lotNumber: 'LOT AP', markCode: 'AA', type: 'REDUCE', bags: 1, weightKg: 50, reason: 'rot' }).expect(403);
-    await h.http().get('/api/v1/vendors').set(s).expect(403);
+    const vendors = (await h.http().get('/api/v1/vendors').set(s).expect(200)).body as Record<string, unknown>[];
+    expect(vendors.length).toBeGreaterThan(0);
+    for (const v of vendors) for (const money of ['totalPurchases', 'payableAmount', 'previousDue', 'newDue', 'advanceAmount', 'openingBalance']) expect(v).not.toHaveProperty(money);
+    await h.http().get(`/api/v1/vendors/${vendors[0]!.id}/ledger`).set(s).expect(403);
+    await h.http().patch(`/api/v1/vendors/${vendors[0]!.id}`).set(s).send({ phone: '1' }).expect(403);
     await h.http().put('/api/v1/settings/sale-charges').set(s).send({ amaliPerBag: 0, marketFeePerBag: 0, amaliEnabled: false, marketFeeEnabled: false }).expect(403);
     await h.http().get('/api/v1/users').set(s).expect(403);
   });

@@ -15,8 +15,13 @@ export const TX_OPTIONS = { maxWait: 10_000, timeout: 20_000 } as const;
  */
 @Injectable()
 export class PrismaService extends PrismaClient implements OnApplicationShutdown {
+  /** Queries issued so far. Only counted under NODE_ENV=test, so a test can prove a request's query count does not grow with the data. */
+  queryCount = 0;
+
   constructor(@Inject(ENV) env: Env) {
-    super({ adapter: new PrismaPg({ connectionString: env.databaseUrl, max: env.dbPoolMax, idleTimeoutMillis: 30_000 }) });
+    const adapter = new PrismaPg({ connectionString: env.databaseUrl, max: env.dbPoolMax, idleTimeoutMillis: 30_000 });
+    super(env.nodeEnv === 'test' ? { adapter, log: [{ emit: 'event', level: 'query' }] } : { adapter });
+    if (env.nodeEnv === 'test') (this as unknown as { $on(event: 'query', handler: () => void): void }).$on('query', () => { this.queryCount += 1; });
   }
 
   async onApplicationShutdown(): Promise<void> {

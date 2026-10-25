@@ -1,20 +1,27 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { audit } from '../../common/audit';
+import { OrgCache } from '../../common/cache';
 import { type Actor, isManagement } from '../../common/auth/actor';
-import { businessDate, fromDbDate } from '../../common/dates';
+import { businessDate, fromDbDate, toDbDate } from '../../common/dates';
 import { toGrams } from '../../common/money';
 import { PrismaService, TX_OPTIONS } from '../../database/prisma.service';
-import type { OpeningStockDto, StockAdjustmentDto } from './inventory.dto';
+import type { MovementsQueryDto, OpeningStockDto, StockAdjustmentDto } from './inventory.dto';
 import { applyStockChange, findLotMark, orgTimezone } from './stock-ledger';
 
 const num = (value: unknown) => Number(value);
+const LOTS_TTL_MS = 15_000;
 
 @Injectable()
 export class InventoryService {
-  constructor(private readonly db: PrismaService) {}
+  constructor(private readonly db: PrismaService, private readonly cache: OrgCache) {}
 
-  /** Lot totals are derived from their marks, never stored twice. */
-  async listLots(actor: Actor, lotId?: string) {
+  /** Lot totals are derived from their marks, never stored twice. The full list is the most-read endpoint, so it is cached briefly. */
+  listLots(actor: Actor, lotId?: string) {
+    if (lotId) return this.loadLots(actor, lotId);
+    return this.cache.get(actor.organizationId, `lots:${isManagement(actor)}`, LOTS_TTL_MS, () => this.loadLots(actor));
+  }
+
+  private async loadLots(actor: Actor, lotId?: string) {
     const lots = await this.db.lot.findMany({
       where: { organizationId: actor.organizationId, ...(lotId && { id: lotId }) },
       include: { vendorParty: { select: { name: true } }, marks: { orderBy: [{ createdAt: 'asc' }, { markCode: 'asc' }] } },
@@ -62,15 +69,31 @@ export class InventoryService {
     return lot;
   }
 
-  async listMovements(actor: Actor, limit: number, offset: number) {
-    const rows = await this.db.stockMovement.findMany({
-      where: { organizationId: actor.organizationId },
-      include: { lotMark: { select: { markCode: true, lot: { select: { lotNumber: true } } } } },
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      take: limit,
-      skip: offset,
-    });
-    return rows.map((m) => ({
+  /**
+   * Movement history, newest first, filtered in the database (lot, mark, type, date range) and paged; `total` is the number
+   * of rows matching the filters. Two queries however many movements exist.
+   */
+  async listMovements(actor: Actor, q: Partial<Pick<MovementsQueryDto, 'lotNumber' | 'markCode' | 'type' | 'from' | 'to'>> & { limit: number; offset: number }) {
+    const where = {
+      organizationId: actor.organizationId,
+      ...(q.type?.length && { type: { in: q.type } }),
+      ...((q.from || q.to) && { movementDate: { ...(q.from && { gte: toDbDate(q.from) }), ...(q.to && { lte: toDbDate(q.to) }) } }),
+      ...((q.lotNumber || q.markCode) && { lotMark: {
+        ...(q.markCode && { markCode: q.markCode.trim().toUpperCase() }),
+        ...(q.lotNumber && { lot: { lotNumber: q.lotNumber.trim().toUpperCase() } }),
+      } }),
+    };
+    const [rows, total] = await Promise.all([
+      this.db.stockMovement.findMany({
+        where,
+        include: { lotMark: { select: { markCode: true, lot: { select: { lotNumber: true } } } } },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: q.limit,
+        skip: q.offset,
+      }),
+      this.db.stockMovement.count({ where }),
+    ]);
+    return { total, rows: rows.map((m) => ({
       id: m.id,
       date: fromDbDate(m.movementDate),
       type: m.type,
@@ -84,7 +107,7 @@ export class InventoryService {
       balanceWeightKgAfter: num(m.balanceWeightKgAfter),
       reason: m.reason,
       performedBy: m.performedByName,
-    }));
+    })) };
   }
 
   /** Owner/Manager correction. Cannot push stock below zero; recorded as an immutable movement. */

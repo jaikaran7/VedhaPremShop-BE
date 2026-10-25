@@ -1,12 +1,11 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Put } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { type Actor, CurrentActor, Management, Roles } from '../../common/auth/actor';
+import { type Actor, CurrentActor, Roles } from '../../common/auth/actor';
 import { CostingSettingsDto, CreateExpenseTypeDto, CreateMarginDto, UpdateExpenseTypeDto, UpdateMarginDto } from './costing.dto';
 import { CostingService } from './costing.service';
 
-/** Cost data: Owner and Manager read it (frontend `viewPurchaseCost`); only the Owner changes it (`manageSettings`). */
+/** Anyone entering or receiving a vendor bill reads the costing masters; only the Owner changes them (`manageSettings`). */
 @ApiTags('settings')
-@Management()
 @Controller('settings/costing')
 export class CostingController {
   constructor(private readonly costing: CostingService) {}

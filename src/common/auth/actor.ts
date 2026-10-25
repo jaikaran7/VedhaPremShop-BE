@@ -27,3 +27,5 @@ export const CurrentActor = createParamDecorator((_: unknown, ctx: ExecutionCont
 });
 
 export const isManagement = (actor: Actor): boolean => actor.role === 'OWNER' || actor.role === 'MANAGER';
+
+export const isOwner = (actor: Actor): boolean => actor.role === 'OWNER';
