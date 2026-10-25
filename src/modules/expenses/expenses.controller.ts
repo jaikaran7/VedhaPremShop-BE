@@ -34,6 +34,8 @@ export class ExpensesController {
 
   @ApiEndpoint('List expenses', 'Recorded expenses, newest first. Use limit and offset to page.')
   @Get('expenses') list(@CurrentActor() a: Actor, @Query() q: ExpensesQueryDto) { return this.expenses.list(a, q.limit, q.offset); }
+  @ApiEndpoint('Get one expense', 'A recorded expense, including remaining vendor due and receipt number when it is a vendor payment.')
+  @Get('expenses/:id') get(@CurrentActor() a: Actor, @Param('id', ParseUUIDPipe) id: string) { return this.expenses.get(a, id); }
   @ApiEndpoint('Record an expense', 'Any staff member can record one, including for a past date; the cash book readjusts by itself.', 201)
   @Post('expenses') record(@CurrentActor() a: Actor, @Body() dto: RecordExpenseDto) { return this.expenses.record(a, dto); }
 }

@@ -145,6 +145,10 @@ model Organization {
   termsAndConditions        String   @default("") @map("terms_and_conditions")
   invoicePrefix             String   @default("INV") @map("invoice_prefix")
   receiptPrefix             String   @default("REC") @map("receipt_prefix")
+  /// Outstanding report: a customer with a balance and no sale in this many days has no recent purchases.
+  inactivePurchaseDays      Int      @default(45) @map("inactive_purchase_days")
+  /// Dashboard alerts: vendor next-payment date or customer credit due within this many days (including overdue).
+  paymentAlertDays          Int      @default(2) @map("payment_alert_days")
   amaliPerBag               Decimal  @default(0) @map("amali_per_bag") @db.Decimal(10, 2)
   marketFeePerBag           Decimal  @default(0) @map("market_fee_per_bag") @db.Decimal(10, 2)
   amaliEnabled              Boolean  @default(false) @map("amali_enabled")
@@ -644,12 +648,22 @@ model AuditLog {
   @@map("audit_logs")
 }
 
+enum ExpenseAmountBasis {
+  FIXED_TOTAL
+  PER_BAG
+  PER_KG
+}
+
 /// Cost master. PURCHASE types are billed by the vendor (payable); STOCK_RECEIVING types are paid at arrival.
 model CostingExpenseType {
   id             String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   organizationId String             @map("organization_id") @db.Uuid
   name           String
   kind           CostingExpenseKind
+  /// FIXED_TOTAL is a pool. PER_BAG and PER_KG are rates for each eligible unit. Saved receipts keep their own copy.
+  amountBasis       ExpenseAmountBasis @default(FIXED_TOTAL) @map("amount_basis")
+  /// Default spread for a new receiving row. A per-bag type uses bags; a per-kg type uses kilograms.
+  defaultAllocation String             @default("BY_RECEIVED_KG") @map("default_allocation")
   status         MasterStatus       @default(ACTIVE)
   createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
 
@@ -694,6 +708,8 @@ model Purchase {
   receivedAt          DateTime?             @map("received_at") @db.Timestamptz(6)
   /// Frontend LotReceivingRecord: receiving expenses, evaluated groups (with rate snapshots) and issues. Set once.
   receivingRecord     Json?                 @map("receiving_record")
+  /// In-progress receiving inputs. Cleared when stock is posted. Historical rates stay on receivingRecord.
+  receivingDraft      Json?                 @map("receiving_draft")
   createdByUserId     String?               @map("created_by_user_id") @db.Uuid
   createdByName       String                @map("created_by_name")
   createdAt           DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -797,6 +813,10 @@ model Expense {
   paymentMethod    PaymentMethod       @map("payment_method")
   reference        String?
   trackingCategory CollectionCategory? @map("tracking_category")
+  /// Optional reminder date on a vendor payment (Purchase Payments).
+  nextPaymentDate  DateTime?           @map("next_payment_date") @db.Date
+  /// Set on vendor payments so the payment can be printed like a customer receipt.
+  receiptNumber    String?             @map("receipt_number")
   recordedByUserId String?             @map("recorded_by_user_id") @db.Uuid
   recordedByName   String              @map("recorded_by_name")
   createdAt        DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -808,6 +828,7 @@ model Expense {
 
   @@index([organizationId, expenseDate])
   @@index([vendorPartyId])
+  @@unique([organizationId, receiptNumber])
   @@map("expenses")
 }
 

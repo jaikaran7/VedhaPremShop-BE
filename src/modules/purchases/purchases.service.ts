@@ -3,12 +3,14 @@ import { audit } from '../../common/audit';
 import type { Actor } from '../../common/auth/actor';
 import { businessDate, fromDbDate, toDbDate } from '../../common/dates';
 import { formatRupees, fromPaise, lineAmountPaise, toGrams, toPaise } from '../../common/money';
+import { isUniqueViolation } from '../../common/pg-error';
 import { PrismaService, TX_OPTIONS, type Tx } from '../../database/prisma.service';
 import { Prisma } from '../../generated/prisma/client';
 import { applyStockChange, orgTimezone } from '../inventory/stock-ledger';
 import { loadCostingInputs } from '../settings/costing.service';
 import type { CreatePurchaseDto, ReceivePurchaseDto, UpdatePurchaseDto } from './purchases.dto';
 import { type BillSnapshotInput, diffBill } from './purchase-diff';
+import { composeMarkCode, lotCodeFromNumber } from './lot-mark';
 import { appliedSellingRate, type DraftGroup, evaluateReceiving, takenInspectionQuantity } from './receiving.calc';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -51,6 +53,7 @@ function purchaseView(row: PurchaseRow) {
     receiptStatus: row.receiptStatus,
     ...(row.expectedArrivalDate && { expectedArrivalDate: fromDbDate(row.expectedArrivalDate) }),
     ...(row.receivingRecord && { receiving: row.receivingRecord }),
+    ...(row.receivingDraft && { receivingDraft: row.receivingDraft }),
     revisionCount: row._count.revisions,
     createdAt: row.createdAt.toISOString(),
   };
@@ -134,7 +137,10 @@ export class PurchasesService {
         details: `Vendor bill ${bill.billNumber} saved for ${purchase.lotNumber}: ${formatRupees(fromPaise(bill.grossPaise + bill.expensePaise))}. Awaiting physical receipt.`,
       });
       return purchase.id;
-    }, TX_OPTIONS);
+    }, TX_OPTIONS).catch((error: unknown) => {
+      if (isUniqueViolation(error)) throw new ConflictException(`Bill ${dto.billNumber.trim()} is already recorded for this vendor.`);
+      throw error;
+    });
     return this.get(actor, id);
   }
 
@@ -201,6 +207,15 @@ export class PurchasesService {
     return this.get(actor, id);
   }
 
+  /** Stores the in-progress count, expenses and lot commission. Stock is unchanged until receive. */
+  async saveReceivingDraft(actor: Actor, id: string, dto: ReceivePurchaseDto) {
+    const purchase = await this.db.purchase.findFirst({ where: { id, organizationId: actor.organizationId }, select: { receiptStatus: true } });
+    if (!purchase) throw new NotFoundException('Purchase not found');
+    if (purchase.receiptStatus !== 'PENDING_RECEIPT') throw new UnprocessableEntityException('This lot is already received.');
+    await this.db.purchase.update({ where: { id }, data: { receivingDraft: dto as unknown as Prisma.InputJsonValue } });
+    return this.get(actor, id);
+  }
+
   /**
    * Physical receipt: evaluates the draft with the server's costing rules, then posts stock once. The purchase row is
    * locked first, so a double click or a retry waits and then gets the already-received bill instead of posting twice.
@@ -252,7 +267,8 @@ export class PurchasesService {
       await tx.purchase.update({ where: { id }, data: {
         receiptStatus: 'RECEIVED',
         receivedAt,
-        receivingRecord: { receivedAt: receivedAt.toISOString(), stockPosted: true, expenses: dto.expenses, groups: evaluation.groups, issues: evaluation.issues } as unknown as Prisma.InputJsonValue,
+        receivingDraft: Prisma.DbNull,
+        receivingRecord: { receivedAt: receivedAt.toISOString(), stockPosted: true, calculationVersion: 2, expenses: dto.expenses, groups: evaluation.groups, issues: evaluation.issues } as unknown as Prisma.InputJsonValue,
       } });
       await audit(tx, actor, {
         action: 'RECEIVE_LOT', entity: 'PURCHASE', entityId: id,
@@ -267,8 +283,10 @@ export class PurchasesService {
    * bill number is unused for this vendor, charges resolve to their master (one query for all) or a custom name.
    */
   private async priceBill(tx: Tx, actor: Actor, dto: CreatePurchaseDto, editingId?: string): Promise<{ vendorId: string; productId: string; bill: PricedBill }> {
-    const markCodes = dto.items.map((i) => i.markCode.trim().toUpperCase());
+    const lotCode = lotCodeFromNumber(dto.lotNumber);
+    const markCodes = dto.items.map((i) => composeMarkCode(lotCode, i.markCode));
     if (markCodes.some((code) => !code)) throw new UnprocessableEntityException('Every line needs a quality (mark).');
+    if (markCodes.some((code) => code.length > 16)) throw new UnprocessableEntityException('A quality name with the lot code is longer than 16 characters.');
     if (new Set(markCodes).size !== markCodes.length) throw new UnprocessableEntityException('Each quality can appear once per vendor bill.');
     const billNumber = dto.billNumber.trim();
     if (!billNumber) throw new UnprocessableEntityException('Bill number is required.');
@@ -322,7 +340,7 @@ export class PurchasesService {
   }
 
   /** Server-authoritative draft: a vendor-bill line takes mark, expected quantity and rate from the bill, never from the client. */
-  private evaluate(purchase: { items: { id: string; markCode: string; bags: number; weightKg: Prisma.Decimal; ratePerKg: Prisma.Decimal }[] }, dto: ReceivePurchaseDto, costing: Awaited<ReturnType<typeof loadCostingInputs>>) {
+  private evaluate(purchase: { lotNumber: string; items: { id: string; markCode: string; bags: number; weightKg: Prisma.Decimal; ratePerKg: Prisma.Decimal }[] }, dto: ReceivePurchaseDto, costing: Awaited<ReturnType<typeof loadCostingInputs>>) {
     const items = new Map(purchase.items.map((i) => [i.id, i]));
     const groupIds = new Set(dto.groups.map((g) => g.id));
     const missing = purchase.items.find((i) => !groupIds.has(i.id));
@@ -336,7 +354,7 @@ export class PurchasesService {
       const item = items.get(g.id);
       return {
         id: g.id,
-        markCode: item?.markCode ?? g.markCode,
+        markCode: item?.markCode ?? composeMarkCode(lotCodeFromNumber(purchase.lotNumber), g.markCode),
         fromVendorBill: item !== undefined,
         expectedBags: item?.bags ?? 0,
         expectedWeightKg: item ? num(item.weightKg) : 0,
@@ -346,6 +364,7 @@ export class PurchasesService {
         receivedWeightKg: g.receivedWeightKg,
         originalPurchaseRate: item ? num(item.ratePerKg) : (g.originalPurchaseRate ?? Number.NaN),
         revisedSellingRate: g.revisedSellingRate ?? null,
+        marginPerKg: g.marginPerKg ?? null,
         overrideReason: g.overrideReason ?? '',
         remarks: g.remarks ?? '',
         bagWeights: g.bagWeights ?? [],
@@ -355,9 +374,12 @@ export class PurchasesService {
       draft: {
         groups,
         expenses: dto.expenses.map((e) => ({
-          id: e.id, expenseTypeId: e.expenseTypeId, expenseTypeName: e.expenseTypeName, description: e.description ?? '', amount: e.amount, remarks: e.remarks ?? '',
+          id: e.id, expenseTypeId: e.expenseTypeId, expenseTypeName: e.expenseTypeName, description: e.description ?? '', amount: e.amount,
+          ...(e.amountBasis && { amountBasis: e.amountBasis }),
+          remarks: e.remarks ?? '',
           allocation: e.allocation.method === 'ASSIGN_TO_GROUP' ? { method: 'ASSIGN_TO_GROUP' as const, groupId: e.allocation.groupId ?? '' } : { method: e.allocation.method },
         })),
+        lotMarginPerKg: dto.lotMarginPerKg ?? null,
       },
       ...costing,
     });

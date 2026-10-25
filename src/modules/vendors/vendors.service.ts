@@ -79,7 +79,7 @@ export class VendorsService {
       }),
       this.db.expense.findMany({
         where: { organizationId: actor.organizationId, vendorPartyId: id },
-        select: { id: true, expenseDate: true, amount: true, paymentMethod: true, reference: true, recordedByName: true, createdAt: true, account: { select: { name: true } } },
+        select: { id: true, expenseDate: true, amount: true, paymentMethod: true, reference: true, receiptNumber: true, nextPaymentDate: true, recordedByName: true, createdAt: true, account: { select: { name: true } } },
         orderBy: [{ expenseDate: 'asc' }, { createdAt: 'asc' }],
       }),
     ]);
@@ -100,7 +100,10 @@ export class VendorsService {
       }),
       payments: payments.map((p) => ({
         id: p.id, date: fromDbDate(p.expenseDate), amount: Number(p.amount), paymentMethod: p.paymentMethod, accountName: p.account.name,
-        ...(p.reference && { reference: p.reference }), recordedBy: p.recordedByName, createdAt: p.createdAt.toISOString(),
+        ...(p.reference && { reference: p.reference }),
+        ...(p.receiptNumber && { receiptNumber: p.receiptNumber }),
+        ...(p.nextPaymentDate && { nextPaymentDate: fromDbDate(p.nextPaymentDate) }),
+        recordedBy: p.recordedByName, createdAt: p.createdAt.toISOString(),
       })),
     };
   }

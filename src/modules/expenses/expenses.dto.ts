@@ -25,6 +25,8 @@ export class RecordExpenseDto {
   @IsOptional() @IsIn(COLLECTION_CATEGORIES) trackingCategory?: CollectionCategoryId | null;
   @ApiPropertyOptional({ description: 'Required for Purchase Payments (the vendor being paid); refused for any other category' })
   @IsOptional() @IsUUID() vendorId?: string;
+  @ApiPropertyOptional({ example: '2026-11-05', description: 'Optional next payment date for a vendor payment; refused on any other expense' })
+  @IsOptional() @IsIsoDate() nextPaymentDate?: string;
 }
 
 export class ExpensesQueryDto extends ListQueryDto {}

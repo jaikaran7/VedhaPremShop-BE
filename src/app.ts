@@ -4,6 +4,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import cookieParser from 'cookie-parser';
 import { json } from 'express';
 import { AppModule } from './app.module';
+import { isAllowedCorsOrigin } from './common/http/cors-origin';
 import { requestId } from './common/http/request-id.middleware';
 import type { Env } from './config/env';
 
@@ -18,7 +19,9 @@ export async function createApp(env: Env, options: { logger?: false } = {}): Pro
   app.use(cookieParser());
   app.setGlobalPrefix('api/v1');
   app.enableCors({
-    origin: env.corsOrigins,
+    origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+      callback(null, isAllowedCorsOrigin(origin, env.corsOrigins, env.nodeEnv));
+    },
     credentials: true,
     allowedHeaders: ['Content-Type', 'Accept', 'X-Requested-With', 'Idempotency-Key', 'X-Request-Id'],
     exposedHeaders: ['X-Request-Id', 'X-Total-Count'],

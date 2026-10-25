@@ -92,8 +92,9 @@ describe('stock movement history is filtered and paged in the database', () => {
 describe('cached masters never show stale values to the person who just saved', () => {
   it('company, sale charges, marks and costing read back what was just written', async () => {
     const company = (await h.http().get('/api/v1/settings/company').set(owner)).body;
-    const saved = await h.http().put('/api/v1/settings/company').set(owner).send({ ...company, shopName: 'Vedhaprem Test Mandi' }).expect(200);
-    expect(saved.body.shopName).toBe('Vedhaprem Test Mandi');
+    expect(company).toMatchObject({ inactivePurchaseDays: 45, paymentAlertDays: 2 });
+    const saved = await h.http().put('/api/v1/settings/company').set(owner).send({ ...company, shopName: 'Vedhaprem Test Mandi', inactivePurchaseDays: 30, paymentAlertDays: 3 }).expect(200);
+    expect(saved.body).toMatchObject({ shopName: 'Vedhaprem Test Mandi', inactivePurchaseDays: 30, paymentAlertDays: 3 });
     expect((await h.http().get('/api/v1/settings/company').set(cashier)).body.shopName).toBe('Vedhaprem Test Mandi');
     await h.http().put('/api/v1/settings/sale-charges').set(owner).send({ amaliPerBag: 25, marketFeePerBag: 5, amaliEnabled: true, marketFeeEnabled: true }).expect(200);
     expect((await h.http().get('/api/v1/settings/sale-charges').set(cashier)).body).toMatchObject({ amaliPerBag: 25, marketFeePerBag: 5 });

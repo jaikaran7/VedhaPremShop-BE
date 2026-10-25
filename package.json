@@ -18,7 +18,8 @@
     "bootstrap:admin": "tsx --env-file-if-exists=.env scripts/bootstrap-admin.ts",
     "prisma": "node --env-file-if-exists=.env node_modules/prisma/build/index.js",
     "postinstall": "prisma generate",
-    "db:status": "node --env-file-if-exists=.env node_modules/prisma/build/index.js migrate status"
+    "db:status": "node --env-file-if-exists=.env node_modules/prisma/build/index.js migrate status",
+    "db:wipe-ops": "tsx --env-file-if-exists=.env scripts/wipe-operational-data.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.2.8",

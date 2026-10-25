@@ -20,6 +20,9 @@ export interface MarginComponent {
 
 export type AllocationChoice = { method: 'BY_RECEIVED_KG' } | { method: 'BY_RECEIVED_BAGS' } | { method: 'ASSIGN_TO_GROUP'; groupId: string };
 
+/** FIXED_TOTAL is a pool to spread. PER_BAG and PER_KG are rates charged for each eligible unit. */
+export type ExpenseAmountBasis = 'FIXED_TOTAL' | 'PER_BAG' | 'PER_KG';
+
 export interface BagWeight {
   bagNumber: number;
   weightKg: number;
@@ -31,6 +34,8 @@ export interface ReceivingExpense {
   expenseTypeName: string;
   description: string;
   amount: number;
+  /** Missing means a fixed pool, which is how expenses were entered before per-unit rates existed. */
+  amountBasis?: ExpenseAmountBasis;
   remarks: string;
   allocation: AllocationChoice;
 }
@@ -47,6 +52,8 @@ export interface DraftGroup {
   receivedWeightKg: number;
   originalPurchaseRate: number;
   revisedSellingRate: number | null;
+  /** Null inherits the lot commission, or the settings default when the lot has none. */
+  marginPerKg?: number | null;
   overrideReason: string;
   remarks: string;
   bagWeights: BagWeight[];
@@ -55,6 +62,8 @@ export interface DraftGroup {
 export interface ReceivingDraft {
   expenses: ReceivingExpense[];
   groups: DraftGroup[];
+  /** Null uses the settings default. A mark override still wins for that mark. */
+  lotMarginPerKg?: number | null;
 }
 
 export interface RateSnapshot {
@@ -74,6 +83,8 @@ export interface RateSnapshot {
   costBaselinePerKg: number;
   preliminarySellingRatePerKg: number;
   finalSellingRatePerKg: number;
+  /** The commission actually added: mark override, else lot override, else the settings default. */
+  appliedMarginPerKg: number;
 }
 
 export interface EvaluatedGroup extends Omit<DraftGroup, 'receivedWeightKg'> {
@@ -83,6 +94,7 @@ export interface EvaluatedGroup extends Omit<DraftGroup, 'receivedWeightKg'> {
   allocatedReceivingCostPerKg: number | null;
   landedCostPerKg: number | null;
   calculatedFinalRate: number | null;
+  appliedMarginPerKg: number | null;
   calculationWarning: string | null;
   rateSnapshot?: RateSnapshot;
 }
@@ -100,9 +112,20 @@ export function ceilWholeRupee(rate: number): number {
   return paise % 100 === 0 ? paise / 100 : Math.floor(paise / 100) + 1;
 }
 
-export function sellingRate(costPerKg: number, settings: CostingSettings, margins: readonly MarginComponent[]) {
+export function expenseAmountBasis(expense: Pick<ReceivingExpense, 'amountBasis'>): ExpenseAmountBasis {
+  return expense.amountBasis ?? 'FIXED_TOTAL';
+}
+
+/** Mark override, then the lot override, then the settings default. */
+export function effectiveMarginPerKg(group: Pick<DraftGroup, 'marginPerKg'>, lotMarginPerKg: number | null | undefined, settings: CostingSettings): number {
+  if (group.marginPerKg != null && Number.isFinite(group.marginPerKg)) return group.marginPerKg;
+  if (lotMarginPerKg != null && Number.isFinite(lotMarginPerKg)) return lotMarginPerKg;
+  return settings.defaultSellingMarginPerKg;
+}
+
+export function sellingRate(costPerKg: number, settings: CostingSettings, margins: readonly MarginComponent[], marginPerKg = settings.defaultSellingMarginPerKg) {
   const additional = margins.reduce((sum, m) => sum + m.perKg, 0);
-  const preliminary = costPerKg + settings.defaultSellingMarginPerKg + additional;
+  const preliminary = costPerKg + marginPerKg + additional;
   return { preliminary, final: ceilWholeRupee(preliminary) };
 }
 
@@ -152,10 +175,30 @@ function shareToGroup(expense: ReceivingExpense, amount: number, group: Measured
   return { perKg: amount / group.receivedWeightKg, warning: null };
 }
 
+function perUnitShare(expense: ReceivingExpense, amount: number, group: Measured, groups: Measured[]): Share {
+  const basis = expenseAmountBasis(expense);
+  if (basis === 'PER_BAG' && expense.allocation.method === 'BY_RECEIVED_KG') {
+    return blocked(`${expense.expenseTypeName} is a rate per bag, so it cannot be spread by kilograms.`);
+  }
+  if (basis === 'PER_KG' && expense.allocation.method === 'BY_RECEIVED_BAGS') {
+    return blocked(`${expense.expenseTypeName} is a rate per kg, so it cannot be spread by bags.`);
+  }
+  if (expense.allocation.method === 'ASSIGN_TO_GROUP' && expense.allocation.groupId !== group.id) return NO_SHARE;
+  if (group.receivedWeightKg <= 0) return blocked(`${group.markCode} has no received weight, so ${expense.expenseTypeName} cannot be stated per kg.`);
+  if (basis === 'PER_KG') return { perKg: amount, warning: null };
+  const eligibleBags = expense.allocation.method === 'ASSIGN_TO_GROUP'
+    ? positive(group.receivedBags)
+    : groups.reduce((sum, item) => sum + positive(item.receivedBags), 0);
+  if (eligibleBags <= 0) return blocked(`${expense.expenseTypeName} is a rate per bag, but received bags are missing.`);
+  if (group.receivedBags <= 0) return NO_SHARE;
+  return { perKg: (group.receivedBags * amount) / group.receivedWeightKg, warning: null };
+}
+
 function allocationSharePerKg(expense: ReceivingExpense, group: Measured, groups: Measured[]): Share {
   const amount = Number(expense.amount) || 0;
   if (amount < 0 || !Number.isFinite(amount)) return blocked(`${expense.expenseTypeName} has an invalid amount.`);
   if (amount === 0) return NO_SHARE;
+  if (expenseAmountBasis(expense) !== 'FIXED_TOTAL') return perUnitShare(expense, amount, group, groups);
   if (expense.allocation.method === 'BY_RECEIVED_KG') return shareByKg(expense, amount, group, groups);
   if (expense.allocation.method === 'BY_RECEIVED_BAGS') return shareByBags(expense, amount, group, groups);
   return shareToGroup(expense, amount, group);
@@ -176,7 +219,7 @@ interface GroupRates {
   warnings: string[];
 }
 
-function snapshotOf(group: DraftGroup, perKg: number, receivedWeightKg: number | null, landed: number, selling: { preliminary: number; final: number }, settings: CostingSettings, margins: readonly MarginComponent[]): RateSnapshot {
+function snapshotOf(group: DraftGroup, perKg: number, receivedWeightKg: number | null, landed: number, selling: { preliminary: number; final: number }, settings: CostingSettings, margins: readonly MarginComponent[], appliedMarginPerKg: number): RateSnapshot {
   const weightForSnapshot = receivedWeightKg && receivedWeightKg > 0 ? receivedWeightKg : 1;
   const allocatedAmount = perKg * (receivedWeightKg ?? 0);
   const hasAllocation = allocatedAmount > 0;
@@ -199,11 +242,12 @@ function snapshotOf(group: DraftGroup, perKg: number, receivedWeightKg: number |
     costBaselinePerKg: landed,
     preliminarySellingRatePerKg: selling.preliminary,
     finalSellingRatePerKg: selling.final,
+    appliedMarginPerKg,
   };
 }
 
 /** Landed cost, calculated selling rate and the frozen rate snapshot for one group. */
-function ratesFor(group: DraftGroup, markCode: string, perKg: number | null, receivedWeightKg: number | null, settings: CostingSettings, margins: readonly MarginComponent[]): GroupRates {
+function ratesFor(group: DraftGroup, markCode: string, perKg: number | null, receivedWeightKg: number | null, settings: CostingSettings, margins: readonly MarginComponent[], lotMarginPerKg: number | null | undefined): GroupRates {
   if (!Number.isFinite(group.originalPurchaseRate) || group.originalPurchaseRate < 0) {
     return { landedCostPerKg: null, calculatedFinalRate: null, warnings: [`${markCode || 'This group'} has no original purchase rate.`] };
   }
@@ -212,8 +256,9 @@ function ratesFor(group: DraftGroup, markCode: string, perKg: number | null, rec
     return { landedCostPerKg: null, calculatedFinalRate: null, warnings: needsRate ? [`${markCode} needs a received weight before a final rate can be calculated.`] : [] };
   }
   const landed = group.originalPurchaseRate + perKg;
-  const selling = sellingRate(landed, settings, margins);
-  return { landedCostPerKg: landed, calculatedFinalRate: selling.final, rateSnapshot: snapshotOf(group, perKg, receivedWeightKg, landed, selling, settings, margins), warnings: [] };
+  const appliedMarginPerKg = effectiveMarginPerKg(group, lotMarginPerKg, settings);
+  const selling = sellingRate(landed, settings, margins, appliedMarginPerKg);
+  return { landedCostPerKg: landed, calculatedFinalRate: selling.final, rateSnapshot: snapshotOf(group, perKg, receivedWeightKg, landed, selling, settings, margins, appliedMarginPerKg), warnings: [] };
 }
 
 /** Kilograms that are accepted: the received weight in proportion to accepted bags. */
@@ -248,7 +293,7 @@ function evaluateGroup(group: DraftGroup, draft: ReceivingDraft, settings: Costi
   const self: Measured = { id: group.id, markCode: markCode || 'Unnamed', receivedBags: positive(group.receivedBags), receivedWeightKg: receivedWeightKg ?? 0 };
 
   const cost = receivingCostFor(group, self, draft.expenses, measured);
-  const rates = ratesFor(group, markCode, cost.perKg, receivedWeightKg, settings, margins);
+  const rates = ratesFor(group, markCode, cost.perKg, receivedWeightKg, settings, margins, draft.lotMarginPerKg);
   const accepted = acceptedWeightFor(group, markCode, receivedWeightKg);
   warnings.push(...cost.warnings, ...rates.warnings);
   if (accepted.warning) warnings.push(accepted.warning);
@@ -265,11 +310,14 @@ function evaluateGroup(group: DraftGroup, draft: ReceivingDraft, settings: Costi
       receivedWeightKg: receivedWeightKg ?? group.receivedWeightKg,
       acceptedWeightKg: accepted.weightKg,
       preliminarySellingRate: Number.isFinite(group.originalPurchaseRate) && group.originalPurchaseRate >= 0
-        ? sellingRate(group.originalPurchaseRate, settings, margins).preliminary
+        ? sellingRate(group.originalPurchaseRate, settings, margins, effectiveMarginPerKg(group, draft.lotMarginPerKg, settings)).preliminary
         : null,
       allocatedReceivingCostPerKg: cost.perKg,
       landedCostPerKg: rates.landedCostPerKg,
       calculatedFinalRate: rates.calculatedFinalRate,
+      appliedMarginPerKg: Number.isFinite(group.originalPurchaseRate) && group.originalPurchaseRate >= 0
+        ? effectiveMarginPerKg(group, draft.lotMarginPerKg, settings)
+        : null,
       calculationWarning: unique[0] ?? null,
       ...(rates.rateSnapshot && { rateSnapshot: rates.rateSnapshot }),
     },
@@ -295,7 +343,12 @@ export function evaluateReceiving(input: { draft: ReceivingDraft; settings: Cost
     .filter(([markCode, count]) => markCode && count > 1)
     .map(([markCode]) => ({ blocking: true, message: `${markCode} is used on more than one group. Give each priced group its own mark.` }));
 
-  return { groups: evaluated.map((e) => e.group), issues: [...evaluated.flatMap((e) => e.issues), ...duplicates] };
+  const counted = measured.some((item) => item.receivedBags > 0 || item.receivedWeightKg > 0);
+  const uncounted: ReceivingIssue[] = !counted && draft.expenses.some((expense) => (Number(expense.amount) || 0) > 0)
+    ? [{ blocking: true, message: 'Enter the received bags and weight before allocating a receiving expense.' }]
+    : [];
+
+  return { groups: evaluated.map((e) => e.group), issues: [...evaluated.flatMap((e) => e.issues), ...duplicates, ...uncounted] };
 }
 
 /** Bags and kilograms that go into stock: accepted plus defective (defective bags are still posted once). */

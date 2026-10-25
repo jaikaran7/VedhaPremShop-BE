@@ -30,6 +30,8 @@ export class SettingsService {
       termsAndConditions: org.termsAndConditions,
       invoicePrefix: org.invoicePrefix,
       receiptPrefix: org.receiptPrefix,
+      inactivePurchaseDays: org.inactivePurchaseDays,
+      paymentAlertDays: org.paymentAlertDays,
     };
   }
 

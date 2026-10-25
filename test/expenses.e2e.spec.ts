@@ -103,8 +103,15 @@ describe('vendor payments reduce what we owe', () => {
     await h.http().post('/api/v1/expenses').set(manager).send(expense({ categoryId: vendorPayId })).expect(422); // no vendor
     await h.http().post('/api/v1/expenses').set(manager).send(expense({ categoryId: vendorPayId, vendorId: '00000000-0000-4000-8000-000000000000' })).expect(404);
 
-    const first = await pay({ amount: 200_000.25 }).expect(201);
-    expect(first.body).toMatchObject({ categoryName: 'Purchase Payments', vendorId: murade.id, vendorName: 'Murade Traders', amount: 200_000.25 });
+    const first = await pay({ amount: 200_000.25, nextPaymentDate: '2026-11-05' }).expect(201);
+    expect(first.body).toMatchObject({
+      categoryName: 'Purchase Payments', vendorId: murade.id, vendorName: 'Murade Traders', amount: 200_000.25,
+      nextPaymentDate: '2026-11-05', remainingDue: 508_499.75, previousDue: 708_500,
+    });
+    expect(first.body.receiptNumber).toMatch(/REC-\d+$/);
+    expect((await h.http().get(`/api/v1/expenses/${first.body.id}`).set(manager).expect(200)).body.receiptNumber).toBe(first.body.receiptNumber);
+    await pay({ nextPaymentDate: '2026-10-01' }).expect(422); // next date before payment date
+    await h.http().post('/api/v1/expenses').set(manager).send(expense({ nextPaymentDate: '2026-11-05' })).expect(422);
     await pay({ amount: 99_999.75, paymentMethod: 'UPI', accountId: upiId }).expect(201);
     const after = await vendor('Murade Traders');
     expect(after.totalPurchases).toBe(708_500);

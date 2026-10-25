@@ -31,4 +31,12 @@ export default tseslint.config(
       'sonarjs/no-os-command-from-path': 'off',
     },
   },
+  // These cases are the LAN origins the matcher is supposed to accept or reject.
+  {
+    files: ['src/common/http/cors-origin.spec.ts'],
+    rules: {
+      'sonarjs/no-hardcoded-ip': 'off',
+      'sonarjs/no-clear-text-protocols': 'off',
+    },
+  },
 );

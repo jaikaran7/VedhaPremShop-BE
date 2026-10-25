@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsIn, IsNumber, IsOptional, IsString, Length, Matches, Max, MaxLength, Min } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsNumber, IsOptional, IsString, Length, Matches, Max, MaxLength, Min } from 'class-validator';
 
 const money = { maxDecimalPlaces: 2 };
 const GRADES = ['PREMIUM', 'GRADE_1', 'GRADE_2', 'COMMERCIAL'] as const;
@@ -16,6 +16,10 @@ export class CompanySettingsDto {
   @ApiProperty() @IsString() @MaxLength(4000) termsAndConditions!: string;
   @ApiProperty() @IsString() @Matches(/^[A-Z0-9-]{1,16}$/) invoicePrefix!: string;
   @ApiProperty() @IsString() @Matches(/^[A-Z0-9-]{1,16}$/) receiptPrefix!: string;
+  @ApiProperty({ example: 45, description: 'Days without a sale before an outstanding customer is marked as no recent purchases.' })
+  @IsInt() @Min(1) @Max(365) inactivePurchaseDays!: number;
+  @ApiProperty({ example: 2, description: 'Dashboard alert window for vendor next-payment dates and customer credit due dates.' })
+  @IsInt() @Min(1) @Max(30) paymentAlertDays!: number;
 }
 
 export class SaleChargeSettingsDto {

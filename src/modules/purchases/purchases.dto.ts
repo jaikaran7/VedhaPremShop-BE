@@ -69,6 +69,8 @@ export class ReceivingExpenseDto {
   @ApiProperty() @IsString() @Length(1, 80) expenseTypeName!: string;
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(200) description?: string;
   @ApiProperty() @IsNumber(money) @Min(0) @Max(100_000_000) amount!: number;
+  @ApiPropertyOptional({ enum: ['FIXED_TOTAL', 'PER_BAG', 'PER_KG'], description: 'FIXED_TOTAL is the whole expense. PER_BAG and PER_KG are charged for each eligible unit. Omitted means a fixed total.' })
+  @IsOptional() @IsIn(['FIXED_TOTAL', 'PER_BAG', 'PER_KG']) amountBasis?: 'FIXED_TOTAL' | 'PER_BAG' | 'PER_KG';
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(500) remarks?: string;
   @ApiProperty({ type: ReceivingAllocationDto }) @ValidateNested() @Type(() => ReceivingAllocationDto) allocation!: ReceivingAllocationDto;
 }
@@ -80,6 +82,9 @@ export class ReceivingExpenseDto {
 export class ReceivingGroupDto {
   @ApiProperty({ description: "A vendor bill line's id, or any new id for a quality that is not on the bill" }) @IsString() @Length(1, 64) id!: string;
   @ApiProperty() @IsString() @Length(1, 16) markCode!: string;
+  @ApiPropertyOptional() @IsOptional() @IsBoolean() fromVendorBill?: boolean;
+  @ApiPropertyOptional() @IsOptional() @IsInt() @Min(0) @Max(1_000_000) expectedBags?: number;
+  @ApiPropertyOptional() @IsOptional() @IsNumber({ maxDecimalPlaces: 3 }) @Min(0) @Max(100_000_000) expectedWeightKg?: number;
   @ApiProperty() @IsInt() @Min(0) @Max(1_000_000) receivedBags!: number;
   @ApiProperty() @IsInt() @Min(0) @Max(1_000_000) acceptedBags!: number;
   @ApiProperty() @IsInt() @Min(0) @Max(1_000_000) defectiveBags!: number;
@@ -87,12 +92,13 @@ export class ReceivingGroupDto {
   @ApiPropertyOptional({ description: 'Only for a quality that is not on the vendor bill' })
   @IsOptional() @IsNumber(money) @Min(0) @Max(100_000) originalPurchaseRate?: number;
   @ApiPropertyOptional({ nullable: true }) @IsOptional() @IsNumber(money) @Min(0) @Max(100_000) revisedSellingRate?: number | null;
+  @ApiPropertyOptional({ nullable: true, description: 'Blank inherits the lot commission, or the settings default when the lot has none.' })
+  @IsOptional() @IsNumber(money) @Min(0) @Max(10_000) marginPerKg?: number | null;
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(300) overrideReason?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(500) remarks?: string;
   @ApiPropertyOptional({ type: [BagWeightDto] })
   @IsOptional() @IsArray() @ArrayMaxSize(1000) @ValidateNested({ each: true }) @Type(() => BagWeightDto)
   bagWeights?: BagWeightDto[];
-  @ApiPropertyOptional() @IsOptional() @IsBoolean() fromVendorBill?: boolean;
 }
 
 export class ReceivePurchaseDto {
@@ -102,4 +108,6 @@ export class ReceivePurchaseDto {
   @ApiProperty({ type: [ReceivingGroupDto] })
   @IsArray() @ArrayMinSize(1) @ArrayMaxSize(50) @ValidateNested({ each: true }) @Type(() => ReceivingGroupDto)
   groups!: ReceivingGroupDto[];
+  @ApiPropertyOptional({ nullable: true, description: 'Commission for this lot only. Blank uses the settings default and does not change it.' })
+  @IsOptional() @IsNumber(money) @Min(0) @Max(10_000) lotMarginPerKg?: number | null;
 }

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Put, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { type Actor, CurrentActor } from '../../common/auth/actor';
 import { ListQueryDto } from '../../common/http/list-query.dto';
@@ -30,6 +30,12 @@ export class PurchasesController {
   @Patch(':id') update(@CurrentActor() a: Actor, @Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdatePurchaseDto) { return this.purchases.update(a, id, dto); }
   @ApiEndpoint('List bill corrections', 'Who changed the bill, when and why, with each field as previous and current value.')
   @Get(':id/revisions') revisions(@CurrentActor() a: Actor, @Param('id', ParseUUIDPipe) id: string) { return this.purchases.revisions(a, id); }
+
+  @ApiEndpoint('Save a receiving draft', 'Keeps the count, expenses and lot commission. Stock is posted only when the lot is received.')
+  @Put(':id/receiving-draft')
+  saveReceivingDraft(@CurrentActor() a: Actor, @Param('id', ParseUUIDPipe) id: string, @Body() dto: ReceivePurchaseDto) {
+    return this.purchases.saveReceivingDraft(a, id, dto);
+  }
 
   /** Posts stock once. Repeating the call returns the already-received purchase. */
   @ApiEndpoint('Receive a consignment', 'Posts the stock once with the weights counted. Repeating the call returns the already-received bill.')

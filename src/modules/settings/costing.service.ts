@@ -7,7 +7,27 @@ import type { CostingExpenseType, SellingMarginComponent } from '../../generated
 import type { CostingSettings, MarginComponent } from '../purchases/receiving.calc';
 import type { CostingSettingsDto, CreateExpenseTypeDto, CreateMarginDto, UpdateExpenseTypeDto, UpdateMarginDto } from './costing.dto';
 
-const expenseTypeView = (row: CostingExpenseType) => ({ id: row.id, name: row.name, kind: row.kind, status: row.status });
+const expenseTypeView = (row: CostingExpenseType) => ({
+  id: row.id, name: row.name, kind: row.kind, status: row.status, amountBasis: row.amountBasis, defaultAllocation: row.defaultAllocation,
+});
+
+type AmountBasis = 'FIXED_TOTAL' | 'PER_BAG' | 'PER_KG';
+
+/** A per-bag rate defaults to bags. A per-kg rate defaults to kilograms. A fixed total may use either. */
+function allowedAllocations(basis: AmountBasis): Array<'BY_RECEIVED_KG' | 'BY_RECEIVED_BAGS'> {
+  if (basis === 'PER_BAG') return ['BY_RECEIVED_BAGS'];
+  if (basis === 'PER_KG') return ['BY_RECEIVED_KG'];
+  return ['BY_RECEIVED_KG', 'BY_RECEIVED_BAGS'];
+}
+
+function allocationForBasis(basis: AmountBasis, requested?: string): 'BY_RECEIVED_KG' | 'BY_RECEIVED_BAGS' {
+  const allowed = allowedAllocations(basis);
+  const fallback = allowed[0] ?? 'BY_RECEIVED_KG';
+  if (requested === 'BY_RECEIVED_KG' || requested === 'BY_RECEIVED_BAGS') {
+    return allowed.includes(requested) ? requested : fallback;
+  }
+  return fallback;
+}
 const marginView = (row: SellingMarginComponent) => ({ id: row.id, name: row.name, calculationType: 'PER_KG' as const, perKg: Number(row.perKg), status: row.status });
 
 /** The costing inputs a receiving needs, read inside the receiving transaction so a mid-flight settings edit cannot split it. */
@@ -53,13 +73,17 @@ export class CostingService {
   async createExpenseType(actor: Actor, dto: CreateExpenseTypeDto) {
     const name = dto.name.trim();
     if (!name) throw new ConflictException('Name is required');
-    return this.db.$transaction(async (tx) => {
+    const amountBasis = dto.kind === 'STOCK_RECEIVING' ? (dto.amountBasis ?? 'FIXED_TOTAL') : 'FIXED_TOTAL';
+    const defaultAllocation = allocationForBasis(amountBasis, dto.defaultAllocation);
+    const view = await this.db.$transaction(async (tx) => {
       const dupe = await tx.costingExpenseType.findFirst({ where: { organizationId: actor.organizationId, kind: dto.kind, name: { equals: name, mode: 'insensitive' } } });
       if (dupe) throw new ConflictException(`${name} already exists`);
-      const row = await tx.costingExpenseType.create({ data: { organizationId: actor.organizationId, name, kind: dto.kind } });
+      const row = await tx.costingExpenseType.create({ data: { organizationId: actor.organizationId, name, kind: dto.kind, amountBasis, defaultAllocation } });
       await audit(tx, actor, { action: 'CREATE_EXPENSE_TYPE', entity: 'COSTING', entityId: row.id, details: `Added ${dto.kind === 'PURCHASE' ? 'purchase' : 'stock-receiving'} expense type ${name}` });
       return expenseTypeView(row);
     }, TX_OPTIONS);
+    this.cache.invalidate(actor.organizationId);
+    return view;
   }
 
   async updateExpenseType(actor: Actor, id: string, dto: UpdateExpenseTypeDto) {
@@ -70,10 +94,15 @@ export class CostingService {
       if (!name) throw new ConflictException('Name is required');
       const clash = await tx.costingExpenseType.findFirst({ where: { organizationId: actor.organizationId, kind: found.kind, id: { not: id }, name: { equals: name, mode: 'insensitive' } } });
       if (clash) throw new ConflictException(`${name} already exists`);
-      const row = await tx.costingExpenseType.update({ where: { id }, data: { name, ...(dto.status && { status: dto.status }) } });
+      const amountBasis = found.kind === 'STOCK_RECEIVING' ? (dto.amountBasis ?? found.amountBasis) : found.amountBasis;
+      const defaultAllocation = allocationForBasis(amountBasis, dto.defaultAllocation ?? found.defaultAllocation);
+      const row = await tx.costingExpenseType.update({ where: { id }, data: { name, amountBasis, defaultAllocation, ...(dto.status && { status: dto.status }) } });
       await audit(tx, actor, { action: 'UPDATE_EXPENSE_TYPE', entity: 'COSTING', entityId: id, details: 'Updated expense type without rewriting saved bills' });
       return expenseTypeView(row);
-    }, TX_OPTIONS);
+    }, TX_OPTIONS).then((view) => {
+      this.cache.invalidate(actor.organizationId);
+      return view;
+    });
   }
 
   listMargins(actor: Actor) {

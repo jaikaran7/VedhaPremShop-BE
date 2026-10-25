@@ -439,6 +439,8 @@ export interface CompanySettings {
   termsAndConditions: string;
   invoicePrefix: string;
   receiptPrefix: string;
+  inactivePurchaseDays: number;
+  paymentAlertDays: number;
 }
 
 export type MasterStatus = 'ACTIVE' | 'INACTIVE';

@@ -2,10 +2,13 @@ import { Injectable, NotFoundException, UnprocessableEntityException } from '@ne
 import { audit } from '../../common/audit';
 import { type Actor, isOwner, isManagement } from '../../common/auth/actor';
 import { OrgCache } from '../../common/cache';
-import { fromDbDate, toDbDate } from '../../common/dates';
+import { daysBetween, fromDbDate, toDbDate } from '../../common/dates';
 import { formatRupees, fromPaise, toPaise } from '../../common/money';
-import { PrismaService, TX_OPTIONS } from '../../database/prisma.service';
+import { nextSequence } from '../../common/sequences';
+import { type Db, type Tx, PrismaService, TX_OPTIONS } from '../../database/prisma.service';
 import type { CashAccount, Expense, ExpenseCategory } from '../../generated/prisma/client';
+import { vendorTotals } from '../vendors/payables';
+import { vendorMoney } from '../vendors/vendors.service';
 import type { CreateExpenseCategoryDto, RecordExpenseDto } from './expenses.dto';
 
 /** The frontend treats an expense in this category as a payment to a vendor (matched by name, ignoring case). */
@@ -23,7 +26,7 @@ type ExpenseRow = Expense & { category: ExpenseCategory; account: CashAccount; v
 const INCLUDE = { category: true, account: true, vendorParty: { select: { name: true } } } as const;
 
 /** Frontend `Expense` shape. */
-function expenseView(row: ExpenseRow) {
+function expenseView(row: ExpenseRow, money?: { remainingDue: number; previousDue?: number }) {
   return {
     id: row.id,
     categoryId: row.categoryId,
@@ -36,6 +39,9 @@ function expenseView(row: ExpenseRow) {
     accountName: row.account.name,
     ...(row.reference && { reference: row.reference }),
     ...(row.vendorPartyId && { vendorId: row.vendorPartyId, vendorName: row.vendorParty?.name ?? '' }),
+    ...(row.nextPaymentDate && { nextPaymentDate: fromDbDate(row.nextPaymentDate) }),
+    ...(row.receiptNumber && { receiptNumber: row.receiptNumber }),
+    ...(money && { remainingDue: money.remainingDue, previousDue: money.previousDue }),
     recordedBy: row.recordedByName,
     createdAt: row.createdAt.toISOString(),
   };
@@ -80,7 +86,17 @@ export class ExpensesService {
       where: { organizationId: actor.organizationId, ...(!isManagement(actor) && { recordedByUserId: actor.userId }) }, include: INCLUDE,
       orderBy: [{ expenseDate: 'desc' }, { createdAt: 'desc' }], take: limit, skip: offset,
     });
-    return rows.map(expenseView);
+    return rows.map((row) => expenseView(row));
+  }
+
+  async get(actor: Actor, id: string) {
+    const row = await this.db.expense.findFirst({
+      where: { id, organizationId: actor.organizationId, ...(!isManagement(actor) && { recordedByUserId: actor.userId }) },
+      include: INCLUDE,
+    });
+    if (!row) throw new NotFoundException('Expense not found');
+    const remainingDue = row.vendorPartyId ? await this.remainingDue(this.db, actor.organizationId, row.vendorPartyId) : undefined;
+    return expenseView(row, remainingDue === undefined ? undefined : { remainingDue });
   }
 
   /**
@@ -88,22 +104,18 @@ export class ExpensesService {
    * the extra is an advance with the vendor and the next bill uses it (see vendors/vendor-ledger.calc.ts).
    */
   async record(actor: Actor, dto: RecordExpenseDto) {
-    const id = await this.db.$transaction(async (tx) => {
+    const { id, previousDue } = await this.db.$transaction(async (tx) => {
       const category = await tx.expenseCategory.findFirst({ where: { id: dto.categoryId, organizationId: actor.organizationId } });
       if (!category) throw new NotFoundException('Expense category not found');
       const account = await tx.cashAccount.findFirst({ where: { id: dto.accountId, organizationId: actor.organizationId } });
       if (!account) throw new NotFoundException('Account not found');
       const amountPaise = toPaise(dto.amount);
-
-      let vendorName: string | null = null;
-      if (isVendorPaymentCategory(category.name)) {
-        if (!dto.vendorId) throw new UnprocessableEntityException('Choose the vendor this payment is for.');
-        const vendor = await tx.vendor.findFirst({ where: { partyId: dto.vendorId, organizationId: actor.organizationId }, select: { party: { select: { name: true } } } });
-        if (!vendor) throw new NotFoundException('Vendor not found');
-        vendorName = vendor.party.name;
-      } else if (dto.vendorId) {
-        throw new UnprocessableEntityException('A vendor can only be attached to a Purchase Payments expense.');
-      }
+      const vendorPayment = isVendorPaymentCategory(category.name);
+      const vendorName = await this.resolveVendorPayment(tx, actor.organizationId, vendorPayment, dto);
+      const receiptNumber = vendorPayment
+        ? `${(await tx.organization.findUniqueOrThrow({ where: { id: actor.organizationId }, select: { receiptPrefix: true } })).receiptPrefix}-${await nextSequence(tx, actor.organizationId, 'RECEIPT')}`
+        : null;
+      const previousDue = vendorPayment && dto.vendorId ? await this.remainingDue(tx, actor.organizationId, dto.vendorId) : undefined;
 
       const expense = await tx.expense.create({ data: {
         organizationId: actor.organizationId,
@@ -115,6 +127,8 @@ export class ExpensesService {
         paymentMethod: dto.paymentMethod,
         reference: dto.reference?.trim() || null,
         trackingCategory: dto.trackingCategory === undefined ? category.trackingCategory : dto.trackingCategory,
+        nextPaymentDate: dto.nextPaymentDate ? toDbDate(dto.nextPaymentDate) : null,
+        receiptNumber,
         recordedByUserId: actor.userId,
         recordedByName: actor.name,
       } });
@@ -123,9 +137,33 @@ export class ExpensesService {
         action: 'RECORD_EXPENSE', entity: 'EXPENSE', entityId: expense.id,
         details: `Expense ${category.name} of ${formatRupees(fromPaise(amountPaise))} paid from ${account.name}${payee}`,
       });
-      return expense.id;
+      return { id: expense.id, previousDue };
     }, TX_OPTIONS);
     const row = await this.db.expense.findUniqueOrThrow({ where: { id }, include: INCLUDE });
-    return expenseView(row);
+    const remainingDue = row.vendorPartyId ? await this.remainingDue(this.db, actor.organizationId, row.vendorPartyId) : undefined;
+    return expenseView(row, remainingDue === undefined ? undefined : { remainingDue, previousDue });
+  }
+
+  private async resolveVendorPayment(tx: Tx, organizationId: string, vendorPayment: boolean, dto: RecordExpenseDto): Promise<string | null> {
+    if (dto.nextPaymentDate && !vendorPayment) {
+      throw new UnprocessableEntityException('A next payment date can only be set on a vendor payment.');
+    }
+    if (dto.nextPaymentDate && daysBetween(dto.date, dto.nextPaymentDate) < 0) {
+      throw new UnprocessableEntityException('The next payment date cannot be before the payment date.');
+    }
+    if (!vendorPayment) {
+      if (dto.vendorId) throw new UnprocessableEntityException('A vendor can only be attached to a Purchase Payments expense.');
+      return null;
+    }
+    if (!dto.vendorId) throw new UnprocessableEntityException('Choose the vendor this payment is for.');
+    const vendor = await tx.vendor.findFirst({ where: { partyId: dto.vendorId, organizationId }, select: { party: { select: { name: true } } } });
+    if (!vendor) throw new NotFoundException('Vendor not found');
+    return vendor.party.name;
+  }
+
+  private async remainingDue(db: Db, organizationId: string, vendorId: string) {
+    const totals = await vendorTotals(db, organizationId, vendorId);
+    const t = totals.get(vendorId);
+    return vendorMoney(t?.openingPaise ?? 0, t?.billedPaise ?? 0, t?.paidPaise ?? 0).payableAmount;
   }
 }
