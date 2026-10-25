@@ -1,0 +1,48 @@
+# Implementation Status (2026-10-25)
+
+Statuses: **Verified complete** · **Implemented, unverified** · **Partial** · **Not implemented** · **Blocked** · **N/A**.
+"Verified" means a command was run in session 3 and passed (listed at the bottom), not that a previous session said so.
+
+| Workstream | Status | Evidence (files) | What works | Gap / next action | Done when |
+|---|---|---|---|---|---|
+| Repository setup | Partial | `package.json`, `prisma.config.ts`, `.env.example` | Scripts build/lint/test/migrate/seed; env validated | **Nothing is committed in either repo.** Commit and push after review | `git log` shows the work |
+| Frontend inventory | Verified complete | `docs/architecture/frontend-screen-inventory.md` | Every route, form and mock rule recorded | Keep in step with new screens | — |
+| Backend foundation | Verified complete | `src/app.ts`, `src/config/env.ts`, `common/http/*`, `health/` | Global validation (whitelist), one error shape, request ids, throttling, Swagger | — | — |
+| Database | Verified complete (dev) | `prisma/schema.prisma`, 3 migrations | Neon **dev** is PG 18.6, all 3 migrations applied; CHECKs + append-only triggers | **Production (`ep-round-bar`) has no migrations applied** — run `db:migrate` against it deliberately at deploy | `db:status` on prod is up to date |
+| Authentication | Verified complete | `modules/auth`, `test/auth.e2e.spec.ts` | Login, rotating refresh with reuse detection, logout, CSRF header, change password | — | — |
+| Authorization | Verified complete (RBAC + tenancy) | `common/auth`, e2e | Roles enforced server-side; other orgs get 404 | Postgres RLS **not implemented** (Phase 9, defence in depth) | RLS policies + test |
+| Customers | Verified complete | `modules/customers` | CRUD, credit terms by role, ledger, advance, safe delete | Search/pagination are client-side; fine at current size | — |
+| Suppliers (vendors) | Partial | `modules/vendors` | CRUD; **payable now derived from purchases** | No vendor payments (Q10); distributor link has no endpoints (D9) | Owner answers Q10 |
+| Inventory / lots | Verified complete | `modules/inventory`, `stock-ledger.ts` | Lots derived from marks; atomic conditional stock change | — | — |
+| Stock movements | Verified complete | `StockMovement`, `reconciliation.ts` | Ledger + `stockDrift`; PURCHASE_IN now included | — | — |
+| New Sale | Verified complete (API) | `modules/sales`, `test/sales.e2e.spec.ts` | Server totals, idempotency, atomic stock, backdate approval, cancel/rebill | New FE parts (date picker, rebill mode, credit warning) are **typechecked only**, not browser-tested | Click-through of the five flows |
+| Sales & invoices | Verified complete (API) | same | List/detail, statuses, printable data | — | — |
+| Payments | Verified complete (API) | `modules/payments` | Allocation, advance, refund on counter cancel | Receipt screens not browser-tested | Click-through |
+| Receivables | Verified complete | `receivables.ts`, `receivableDrift` | Signed balance from the ledger | — | — |
+| Purchases | **Verified complete (new)** | `modules/purchases/*`, `test/purchases.e2e.spec.ts` | Create bill, receive once, partial acceptance, rate snapshot, immutability, tenancy; **frontend draft/preview matches server on every field** | UI click-through of New Purchase and Receive Lot | Browser run |
+| Costing masters | **Verified complete (new)** | `modules/settings/costing.*` | Default margin, expense types, per-kg margins; Owner writes | — | — |
+| Dashboard / reports | Partial | `modules/reports` | `/reports` returns the six collections the Reports screen computes from; dashboards use list endpoints | Aggregation is client-side; snapshot capped at 5000 rows. SQL metrics (Phase 8) | Metric parity test |
+| Expenses / cash accounts | **Not implemented** | — | — | `/expenses`, `/expense-categories`, `/cash-accounts` 404; **the Collections screen depends on them** | See checkpoint |
+| Frontend integration | Partial | `src/api/*` | sales, payments, customers, vendors, lots, stock, purchases, approvals, costing, reports wired | expenses, cash accounts, `settings/reset` (demo only), `sales/:id/edit-requests` (superseded by rebill) | Screens load without 404 |
+| Validation | Verified complete | DTOs | Bounds, decimals, UUIDs, whitelist | — | — |
+| Reliability | Verified complete | tests | Transactions, idempotency (sales, payments), row locks; 5 parallel sales and 10 parallel receives tested | Purchase create has no idempotency key (unique bill number guards it) | — |
+| Testing | Partial | 71 backend + 44 frontend tests | Unit + e2e on real Postgres | No browser/UI e2e, no load test, no prod-migration rehearsal | Phase 9 |
+| Security | Partial | `docs/architecture/security-model.md` | Hashing, rotation, rate limits, RBAC, tenancy | RLS; two transitive advisories (multer, js-yaml) documented | Phase 9 |
+| Deployment | Not implemented | `docs/operations/deployment.md` | Documented only | No hosting chosen; CORS/cookie settings for cross-site not exercised | Staging deploy |
+| Documentation | Verified complete | `docs/` | Updated this session | — | — |
+
+## Verification run in session 3 (all observed)
+
+| Command | Result |
+|---|---|
+| `npm run typecheck` · `npm run lint` (backend) | pass, no output |
+| `npm test` (backend, `--runInBand`, local Postgres 17 test DB) | **71 passed / 71**, 6 suites |
+| `npm run build` (backend) | no errors |
+| `npx tsc --noEmit` · `npm test` (frontend) | pass · **44 / 44** |
+| `prisma migrate deploy` on a scratch DB, then `migrate diff --exit-code` | applied; "No difference detected" |
+| `npm run db:migrate` on Neon **dev**, `db:status` | applied; "Database schema is up to date" |
+| Read-only API smoke against Neon dev | purchases 9, vendors 3, costing + 10 expense types, 9/9 lots linked; salesperson gets 403 on purchases and costing |
+| FE-vs-server parity script (frontend's own `draftGroupsFromPurchase` + `evaluateReceiving`) | all fields equal to 1e-9, including warning text |
+
+**Not run:** frontend `next build` (a dev server on :3000 shares `.next`); any browser click-through; frontend lint (baseline of 121 warnings
+from session 2 not re-measured); anything against production.

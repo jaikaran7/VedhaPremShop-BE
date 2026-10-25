@@ -1,0 +1,726 @@
+// Single source of truth for tables. CHECK constraints and append-only triggers that Prisma cannot express
+// live in the migration SQL (prisma/migrations/*/migration.sql) and are listed in docs/architecture/database-design.md.
+// Money numeric(14,2) ₹, weight numeric(12,3) kg, rates numeric(10,2). Lot, mark and product codes are stored uppercase;
+// usernames lowercase, so plain unique indexes are case-insensitive in practice.
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  OWNER
+  MANAGER
+  SALESPERSON
+}
+
+enum CustomerStatus {
+  ACTIVE
+  BLOCKED
+  PENDING
+}
+
+enum CustomerKind {
+  WHOLESALE
+  REGULAR
+}
+
+enum MasterStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum QualityGrade {
+  PREMIUM
+  GRADE_1
+  GRADE_2
+  COMMERCIAL
+}
+
+enum StockMovementType {
+  PURCHASE_IN
+  OPENING_STOCK
+  SALE_OUT
+  SALE_REVERSAL
+  ADJUSTMENT_ADD
+  ADJUSTMENT_SUB
+}
+
+enum StockReferenceType {
+  PURCHASE
+  SALE
+  ADJUSTMENT
+  OPENING
+}
+
+enum SaleStatus {
+  CONFIRMED
+  PENDING_APPROVAL
+  CANCELLED
+}
+
+enum PaymentMethod {
+  CASH
+  UPI
+  QR
+  BANK_TRANSFER
+  CARD
+  OTHER
+  CHEQUE
+}
+
+enum PaymentKind {
+  RECEIPT
+  REFUND
+}
+
+enum LedgerEntryType {
+  OPENING
+  SALE
+  PAYMENT
+  ADJUSTMENT
+}
+
+enum ApprovalType {
+  BACKDATED_SALE
+  SALE_CANCEL
+  SALE_REBILL
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum PurchaseReceiptStatus {
+  PENDING_RECEIPT
+  RECEIVED
+}
+
+enum CostingExpenseKind {
+  PURCHASE
+  STOCK_RECEIVING
+}
+
+enum PurchaseExpenseType {
+  FREIGHT
+  HAMALI
+  MANDI_TAX
+  COMMISSION
+  OTHER
+}
+
+model Organization {
+  id                        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  slug                      String   @unique
+  shopName                  String   @map("shop_name")
+  timezone                  String   @default("Asia/Kolkata")
+  mandiLicenseNo            String   @default("") @map("mandi_license_no")
+  gstNo                     String   @default("") @map("gst_no")
+  address                   String   @default("")
+  phone                     String   @default("")
+  altPhone                  String   @default("") @map("alt_phone")
+  email                     String   @default("")
+  termsAndConditions        String   @default("") @map("terms_and_conditions")
+  invoicePrefix             String   @default("INV") @map("invoice_prefix")
+  receiptPrefix             String   @default("REC") @map("receipt_prefix")
+  amaliPerBag               Decimal  @default(0) @map("amali_per_bag") @db.Decimal(10, 2)
+  marketFeePerBag           Decimal  @default(0) @map("market_fee_per_bag") @db.Decimal(10, 2)
+  amaliEnabled              Boolean  @default(false) @map("amali_enabled")
+  marketFeeEnabled          Boolean  @default(false) @map("market_fee_enabled")
+  /// Costing setting: added to landed cost before the final rate is rounded up to a whole rupee.
+  defaultSellingMarginPerKg Decimal  @default(6) @map("default_selling_margin_per_kg") @db.Decimal(10, 2)
+  createdAt                 DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  costingExpenseTypes CostingExpenseType[]
+  sellingMargins      SellingMarginComponent[]
+  purchases           Purchase[]
+  purchaseItems       PurchaseItem[]
+  purchaseExpenses    PurchaseExpense[]
+  memberships         Membership[]
+  linkedParties       Party[]                  @relation("PartyLinkedOrganization")
+  refreshTokens       RefreshToken[]
+  sequences           DocumentSequence[]
+  parties             Party[]                  @relation("OrgParties")
+  customers           Customer[]
+  vendors             Vendor[]
+  products            Product[]
+  marks               Mark[]
+  lots                Lot[]
+  lotMarks            LotMark[]
+  stockMovements      StockMovement[]
+  sales               Sale[]
+  saleItems           SaleItem[]
+  payments            Payment[]
+  paymentAllocations  PaymentAllocation[]
+  ledgerEntries       CustomerLedgerEntry[]
+  approvals           Approval[]
+  auditLogs           AuditLog[]
+
+  @@map("organizations")
+}
+
+model User {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  username     String   @unique
+  name         String
+  email        String   @default("")
+  phone        String   @default("")
+  passwordHash String   @map("password_hash")
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  memberships        Membership[]
+  refreshTokens      RefreshToken[]
+  stockMovements     StockMovement[]
+  salesCreated       Sale[]
+  paymentsRecorded   Payment[]
+  approvalsRequested Approval[]
+  auditLogs          AuditLog[]
+
+  @@map("users")
+}
+
+model Membership {
+  userId         String   @map("user_id") @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  role           UserRole
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user         User         @relation(fields: [userId], references: [id])
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@id([userId, organizationId])
+  @@map("memberships")
+}
+
+model RefreshToken {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  /// sha256 of the opaque token; the token itself is never stored.
+  tokenHash      String    @unique @map("token_hash")
+  familyId       String    @map("family_id") @db.Uuid
+  expiresAt      DateTime  @map("expires_at") @db.Timestamptz(6)
+  revokedAt      DateTime? @map("revoked_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user         User         @relation(fields: [userId], references: [id])
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([userId])
+  @@index([familyId])
+  @@map("refresh_tokens")
+}
+
+/// Gap-free business numbers (bills, receipts, party codes), incremented inside the owning transaction.
+model DocumentSequence {
+  organizationId String @map("organization_id") @db.Uuid
+  kind           String
+  nextValue      Int    @map("next_value")
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@id([organizationId, kind])
+  @@map("document_sequences")
+}
+
+/// One real business. Customer and vendor roles hang off it, so a business on both sides is one party.
+/// linkedOrganizationId is set when that business keeps its own books on this platform (a distributor in the chain).
+model Party {
+  id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId       String   @map("organization_id") @db.Uuid
+  name                 String
+  phone                String   @default("")
+  email                String   @default("")
+  address              String   @default("")
+  location             String   @default("")
+  linkedOrganizationId String?  @map("linked_organization_id") @db.Uuid
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization       Organization          @relation("OrgParties", fields: [organizationId], references: [id])
+  linkedOrganization Organization?         @relation("PartyLinkedOrganization", fields: [linkedOrganizationId], references: [id])
+  customer           Customer?
+  vendor             Vendor?
+  ledgerEntries      CustomerLedgerEntry[]
+  sales              Sale[]
+  payments           Payment[]
+  lotsSupplied       Lot[]
+  purchases          Purchase[]
+
+  @@index([organizationId])
+  @@map("parties")
+}
+
+model Customer {
+  partyId        String         @id @map("party_id") @db.Uuid
+  organizationId String         @map("organization_id") @db.Uuid
+  code           String
+  creditLimit    Decimal        @default(0) @map("credit_limit") @db.Decimal(14, 2)
+  creditDays     Int            @default(0) @map("credit_days")
+  kind           CustomerKind   @default(WHOLESALE)
+  status         CustomerStatus @default(ACTIVE)
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  party        Party        @relation(fields: [partyId], references: [id])
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([organizationId, code])
+  @@map("customers")
+}
+
+model Vendor {
+  partyId        String       @id @map("party_id") @db.Uuid
+  organizationId String       @map("organization_id") @db.Uuid
+  code           String
+  status         MasterStatus @default(ACTIVE)
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  party        Party        @relation(fields: [partyId], references: [id])
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([organizationId, code])
+  @@map("vendors")
+}
+
+model Product {
+  id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String       @map("organization_id") @db.Uuid
+  code           String
+  name           String
+  status         MasterStatus @default(ACTIVE)
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  lots         Lot[]
+  sales        Sale[]
+  purchases    Purchase[]
+
+  @@unique([organizationId, code])
+  @@map("products")
+}
+
+model Mark {
+  id                  String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId      String       @map("organization_id") @db.Uuid
+  code                String
+  name                String
+  description         String       @default("")
+  defaultSellingRate  Decimal      @default(0) @map("default_selling_rate") @db.Decimal(10, 2)
+  defaultPurchaseRate Decimal      @default(0) @map("default_purchase_rate") @db.Decimal(10, 2)
+  qualityGrade        QualityGrade @default(COMMERCIAL) @map("quality_grade")
+  colorTag            String?      @map("color_tag")
+  createdAt           DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([organizationId, code])
+  @@map("marks")
+}
+
+model Lot {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  lotNumber      String   @map("lot_number")
+  productId      String   @map("product_id") @db.Uuid
+  vendorPartyId  String   @map("vendor_party_id") @db.Uuid
+  /// The purchase that created the lot. Later purchases of the same lot number extend it. Null for opening-stock lots.
+  purchaseId     String?  @map("purchase_id") @db.Uuid
+  purchaseBillNo String   @default("") @map("purchase_bill_no")
+  arrivalDate    DateTime @map("arrival_date") @db.Date
+  notes          String?
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  product      Product      @relation(fields: [productId], references: [id])
+  vendorParty  Party        @relation(fields: [vendorPartyId], references: [id])
+  purchase     Purchase?    @relation(fields: [purchaseId], references: [id])
+  marks        LotMark[]
+
+  @@unique([organizationId, lotNumber])
+  @@map("lots")
+}
+
+/// Current stock per lot and mark. Changed only together with a stock_movements row in the same transaction.
+model LotMark {
+  id                        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId            String   @map("organization_id") @db.Uuid
+  lotId                     String   @map("lot_id") @db.Uuid
+  markCode                  String   @map("mark_code")
+  initialBags               Int      @map("initial_bags")
+  initialWeightKg           Decimal  @map("initial_weight_kg") @db.Decimal(12, 3)
+  remainingBags             Int      @map("remaining_bags")
+  remainingWeightKg         Decimal  @map("remaining_weight_kg") @db.Decimal(12, 3)
+  purchaseRate              Decimal  @default(0) @map("purchase_rate") @db.Decimal(10, 2)
+  finalizedSellingRate      Decimal? @map("finalized_selling_rate") @db.Decimal(10, 2)
+  calculatedSellingRate     Decimal? @map("calculated_selling_rate") @db.Decimal(10, 2)
+  sellingRateOverride       Decimal? @map("selling_rate_override") @db.Decimal(10, 2)
+  sellingRateOverrideReason String?  @map("selling_rate_override_reason")
+  createdAt                 DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization    @relation(fields: [organizationId], references: [id])
+  lot          Lot             @relation(fields: [lotId], references: [id])
+  movements    StockMovement[]
+  saleItems    SaleItem[]
+
+  @@unique([lotId, markCode])
+  @@map("lot_marks")
+}
+
+/// Immutable stock ledger (append-only trigger). Deltas are signed; balances are after this row.
+model StockMovement {
+  id                   String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId       String             @map("organization_id") @db.Uuid
+  lotMarkId            String             @map("lot_mark_id") @db.Uuid
+  type                 StockMovementType
+  bagsDelta            Int                @map("bags_delta")
+  weightDeltaKg        Decimal            @map("weight_delta_kg") @db.Decimal(12, 3)
+  balanceBagsAfter     Int                @map("balance_bags_after")
+  balanceWeightKgAfter Decimal            @map("balance_weight_kg_after") @db.Decimal(12, 3)
+  referenceType        StockReferenceType @map("reference_type")
+  referenceId          String?            @map("reference_id") @db.Uuid
+  reason               String             @default("")
+  movementDate         DateTime           @map("movement_date") @db.Date
+  performedByUserId    String?            @map("performed_by_user_id") @db.Uuid
+  performedByName      String             @map("performed_by_name")
+  createdAt            DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  lotMark      LotMark      @relation(fields: [lotMarkId], references: [id])
+  performedBy  User?        @relation(fields: [performedByUserId], references: [id])
+
+  @@index([organizationId, createdAt])
+  @@index([lotMarkId])
+  @@map("stock_movements")
+}
+
+model Sale {
+  id               String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId   String     @map("organization_id") @db.Uuid
+  billNumber       String     @map("bill_number")
+  /// Null for counter sales. Name/phone/address are a snapshot at billing time.
+  customerPartyId  String?    @map("customer_party_id") @db.Uuid
+  customerName     String     @map("customer_name")
+  customerPhone    String     @default("") @map("customer_phone")
+  customerAddress  String     @default("") @map("customer_address")
+  productId        String     @map("product_id") @db.Uuid
+  productName      String     @map("product_name")
+  saleDate         DateTime   @map("sale_date") @db.Date
+  totalBags        Int        @map("total_bags")
+  totalWeightKg    Decimal    @map("total_weight_kg") @db.Decimal(12, 3)
+  productSubtotal  Decimal    @map("product_subtotal") @db.Decimal(14, 2)
+  amaliPerBag      Decimal    @map("amali_per_bag") @db.Decimal(10, 2)
+  marketFeePerBag  Decimal    @map("market_fee_per_bag") @db.Decimal(10, 2)
+  amaliEnabled     Boolean    @map("amali_enabled")
+  marketFeeEnabled Boolean    @map("market_fee_enabled")
+  amaliAmount      Decimal    @map("amali_amount") @db.Decimal(14, 2)
+  marketFeeAmount  Decimal    @map("market_fee_amount") @db.Decimal(14, 2)
+  otherCharges     Decimal    @default(0) @map("other_charges") @db.Decimal(14, 2)
+  totalAmount      Decimal    @map("total_amount") @db.Decimal(14, 2)
+  paymentType      String     @map("payment_type")
+  creditDays       Int?       @map("credit_days")
+  dueDate          DateTime?  @map("due_date") @db.Date
+  status           SaleStatus @default(CONFIRMED)
+  /// Tenders taken at the counter on a bill awaiting approval; posted as receipts when it is approved.
+  pendingTenders   Json?      @map("pending_tenders")
+  /// The bill this one replaced (rebill).
+  replacesSaleId   String?    @unique @map("replaces_sale_id") @db.Uuid
+  notes            String     @default("")
+  createdByUserId  String     @map("created_by_user_id") @db.Uuid
+  createdByName    String     @map("created_by_name")
+  createdByRole    UserRole   @map("created_by_role")
+  idempotencyKey   String?    @map("idempotency_key")
+  cancelledAt      DateTime?  @map("cancelled_at") @db.Timestamptz(6)
+  cancelledByName  String?    @map("cancelled_by_name")
+  cancelReason     String?    @map("cancel_reason")
+  createdAt        DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization  Organization          @relation(fields: [organizationId], references: [id])
+  customerParty Party?                @relation(fields: [customerPartyId], references: [id])
+  product       Product               @relation(fields: [productId], references: [id])
+  createdBy     User                  @relation(fields: [createdByUserId], references: [id])
+  replaces      Sale?                 @relation("Rebill", fields: [replacesSaleId], references: [id])
+  replacedBy    Sale?                 @relation("Rebill")
+  items         SaleItem[]
+  payments      Payment[]
+  allocations   PaymentAllocation[]
+  ledgerEntries CustomerLedgerEntry[]
+  approvals     Approval[]
+
+  @@unique([organizationId, billNumber])
+  @@unique([organizationId, idempotencyKey])
+  @@index([organizationId, saleDate])
+  @@index([organizationId, createdAt])
+  @@index([customerPartyId])
+  @@map("sales")
+}
+
+model SaleItem {
+  id             String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String  @map("organization_id") @db.Uuid
+  saleId         String  @map("sale_id") @db.Uuid
+  lineNo         Int     @map("line_no")
+  lotMarkId      String  @map("lot_mark_id") @db.Uuid
+  lotNumber      String  @map("lot_number")
+  markCode       String  @map("mark_code")
+  bags           Int
+  weightKg       Decimal @map("weight_kg") @db.Decimal(12, 3)
+  ratePerKg      Decimal @map("rate_per_kg") @db.Decimal(10, 2)
+  amount         Decimal @db.Decimal(14, 2)
+  /// Weighment record: [{ bagNumber, weightKg }], immutable once billed.
+  bagWeights     Json    @map("bag_weights")
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  sale         Sale         @relation(fields: [saleId], references: [id])
+  lotMark      LotMark      @relation(fields: [lotMarkId], references: [id])
+
+  @@unique([saleId, lineNo])
+  @@index([lotMarkId])
+  @@map("sale_items")
+}
+
+/// Receipts (amount > 0) and refunds (amount < 0). Customer null = counter sales.
+model Payment {
+  id                  String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId      String        @map("organization_id") @db.Uuid
+  receiptNumber       String        @map("receipt_number")
+  kind                PaymentKind   @default(RECEIPT)
+  customerPartyId     String?       @map("customer_party_id") @db.Uuid
+  customerName        String        @map("customer_name")
+  receivedOn          DateTime      @map("received_on") @db.Date
+  amount              Decimal       @db.Decimal(14, 2)
+  method              PaymentMethod
+  referenceNumber     String?       @map("reference_number")
+  notes               String?
+  /// Set when the money was taken (or refunded) at the counter for a bill.
+  saleId              String?       @map("sale_id") @db.Uuid
+  /// Signed customer balance before/after (negative = advance held for the customer).
+  previousOutstanding Decimal       @map("previous_outstanding") @db.Decimal(14, 2)
+  newOutstanding      Decimal       @map("new_outstanding") @db.Decimal(14, 2)
+  recordedByUserId    String        @map("recorded_by_user_id") @db.Uuid
+  recordedByName      String        @map("recorded_by_name")
+  idempotencyKey      String?       @map("idempotency_key")
+  createdAt           DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization  Organization          @relation(fields: [organizationId], references: [id])
+  customerParty Party?                @relation(fields: [customerPartyId], references: [id])
+  sale          Sale?                 @relation(fields: [saleId], references: [id])
+  recordedBy    User                  @relation(fields: [recordedByUserId], references: [id])
+  allocations   PaymentAllocation[]
+  ledgerEntries CustomerLedgerEntry[]
+
+  @@unique([organizationId, receiptNumber])
+  @@unique([organizationId, idempotencyKey])
+  @@index([organizationId, receivedOn])
+  @@index([customerPartyId])
+  @@index([saleId])
+  @@map("payments")
+}
+
+/// How receipts settle debts. saleId null = the customer's opening balance. A negative row releases an earlier
+/// allocation (bill cancelled or rebilled) so the money is available again. Append-only.
+model PaymentAllocation {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  paymentId      String   @map("payment_id") @db.Uuid
+  saleId         String?  @map("sale_id") @db.Uuid
+  amount         Decimal  @db.Decimal(14, 2)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  payment      Payment      @relation(fields: [paymentId], references: [id])
+  sale         Sale?        @relation(fields: [saleId], references: [id])
+
+  @@index([saleId])
+  @@index([paymentId])
+  @@map("payment_allocations")
+}
+
+/// Receivables ledger. Balance = Σ debit − Σ credit (negative = advance). Append-only.
+model CustomerLedgerEntry {
+  id              String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId  String          @map("organization_id") @db.Uuid
+  customerPartyId String          @map("customer_party_id") @db.Uuid
+  entryDate       DateTime        @map("entry_date") @db.Date
+  type            LedgerEntryType
+  referenceNo     String          @map("reference_no")
+  saleId          String?         @map("sale_id") @db.Uuid
+  paymentId       String?         @map("payment_id") @db.Uuid
+  description     String
+  debit           Decimal         @default(0) @db.Decimal(14, 2)
+  credit          Decimal         @default(0) @db.Decimal(14, 2)
+  createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization  Organization @relation(fields: [organizationId], references: [id])
+  customerParty Party        @relation(fields: [customerPartyId], references: [id])
+  sale          Sale?        @relation(fields: [saleId], references: [id])
+  payment       Payment?     @relation(fields: [paymentId], references: [id])
+
+  @@index([customerPartyId, entryDate, createdAt])
+  @@index([organizationId])
+  @@map("customer_ledger_entries")
+}
+
+/// Changes only the Owner may approve: backdated bills, cancellations and rebills requested by staff.
+model Approval {
+  id              String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId  String         @map("organization_id") @db.Uuid
+  type            ApprovalType
+  saleId          String         @map("sale_id") @db.Uuid
+  referenceNo     String         @map("reference_no")
+  requestedById   String         @map("requested_by_id") @db.Uuid
+  requestedByName String         @map("requested_by_name")
+  requestedByRole UserRole       @map("requested_by_role")
+  reason          String
+  status          ApprovalStatus @default(PENDING)
+  /// Summary of the bill before the change.
+  originalData    Json           @map("original_data")
+  /// Proposed change; for SALE_REBILL the full new bill input.
+  requestedData   Json           @map("requested_data")
+  reviewedByName  String?        @map("reviewed_by_name")
+  reviewedAt      DateTime?      @map("reviewed_at") @db.Timestamptz(6)
+  reviewNotes     String?        @map("review_notes")
+  createdAt       DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  sale         Sale         @relation(fields: [saleId], references: [id])
+  requestedBy  User         @relation(fields: [requestedById], references: [id])
+
+  @@index([organizationId, status, createdAt])
+  @@index([saleId])
+  @@map("approvals")
+}
+
+model AuditLog {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  occurredAt     DateTime  @default(now()) @map("occurred_at") @db.Timestamptz(6)
+  userId         String?   @map("user_id") @db.Uuid
+  userName       String    @map("user_name")
+  userRole       UserRole? @map("user_role")
+  action         String
+  entity         String
+  entityId       String    @map("entity_id")
+  details        String
+  approver       String?
+  metadata       Json?
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  user         User?        @relation(fields: [userId], references: [id])
+
+  @@index([organizationId, occurredAt])
+  @@map("audit_logs")
+}
+
+/// Cost master. PURCHASE types are billed by the vendor (payable); STOCK_RECEIVING types are paid at arrival.
+model CostingExpenseType {
+  id             String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String             @map("organization_id") @db.Uuid
+  name           String
+  kind           CostingExpenseKind
+  status         MasterStatus       @default(ACTIVE)
+  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization      @relation(fields: [organizationId], references: [id])
+  expenses     PurchaseExpense[]
+
+  @@unique([organizationId, kind, name])
+  @@map("costing_expense_types")
+}
+
+/// Extra rupees-per-kg added to the selling rate on top of the default margin. Only PER_KG is defined.
+model SellingMarginComponent {
+  id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String       @map("organization_id") @db.Uuid
+  name           String
+  perKg          Decimal      @map("per_kg") @db.Decimal(10, 2)
+  status         MasterStatus @default(ACTIVE)
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([organizationId, name])
+  @@map("selling_margin_components")
+}
+
+/// Vendor consignment bill. Posting it records the payable only; stock arrives when it is received (receivingRecord set once).
+model Purchase {
+  id                  String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId      String                @map("organization_id") @db.Uuid
+  billNumber          String                @map("bill_number")
+  vendorPartyId       String                @map("vendor_party_id") @db.Uuid
+  productId           String                @map("product_id") @db.Uuid
+  purchaseDate        DateTime              @map("purchase_date") @db.Date
+  lotNumber           String                @map("lot_number")
+  expectedArrivalDate DateTime?             @map("expected_arrival_date") @db.Date
+  grossAmount         Decimal               @map("gross_amount") @db.Decimal(14, 2)
+  totalExpenses       Decimal               @map("total_expenses") @db.Decimal(14, 2)
+  /// Owed to the vendor: goods plus the bill's purchase expenses.
+  netAmount           Decimal               @map("net_amount") @db.Decimal(14, 2)
+  notes               String?
+  receiptStatus       PurchaseReceiptStatus @default(PENDING_RECEIPT) @map("receipt_status")
+  receivedAt          DateTime?             @map("received_at") @db.Timestamptz(6)
+  /// Frontend LotReceivingRecord: receiving expenses, evaluated groups (with rate snapshots) and issues. Set once.
+  receivingRecord     Json?                 @map("receiving_record")
+  createdByUserId     String?               @map("created_by_user_id") @db.Uuid
+  createdByName       String                @map("created_by_name")
+  createdAt           DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization      @relation(fields: [organizationId], references: [id])
+  vendorParty  Party             @relation(fields: [vendorPartyId], references: [id])
+  product      Product           @relation(fields: [productId], references: [id])
+  items        PurchaseItem[]
+  expenses     PurchaseExpense[]
+  lots         Lot[]
+
+  @@unique([organizationId, vendorPartyId, billNumber])
+  @@index([organizationId, purchaseDate])
+  @@index([vendorPartyId])
+  @@map("purchases")
+}
+
+model PurchaseItem {
+  id             String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String  @map("organization_id") @db.Uuid
+  purchaseId     String  @map("purchase_id") @db.Uuid
+  position       Int
+  markCode       String  @map("mark_code")
+  bags           Int
+  weightKg       Decimal @map("weight_kg") @db.Decimal(12, 3)
+  ratePerKg      Decimal @map("rate_per_kg") @db.Decimal(10, 2)
+  totalAmount    Decimal @map("total_amount") @db.Decimal(14, 2)
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  purchase     Purchase     @relation(fields: [purchaseId], references: [id])
+
+  @@index([purchaseId])
+  @@map("purchase_items")
+}
+
+model PurchaseExpense {
+  id              String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId  String              @map("organization_id") @db.Uuid
+  purchaseId      String              @map("purchase_id") @db.Uuid
+  position        Int
+  type            PurchaseExpenseType @default(OTHER)
+  /// Null for a custom, one-off expense typed on the bill.
+  expenseTypeId   String?             @map("expense_type_id") @db.Uuid
+  /// Copied at billing time; later master renames do not rewrite the bill.
+  expenseTypeName String              @map("expense_type_name")
+  amount          Decimal             @db.Decimal(14, 2)
+  description     String              @default("")
+  remarks         String?
+
+  organization Organization        @relation(fields: [organizationId], references: [id])
+  purchase     Purchase            @relation(fields: [purchaseId], references: [id])
+  expenseType  CostingExpenseType? @relation(fields: [expenseTypeId], references: [id])
+
+  @@index([purchaseId])
+  @@map("purchase_expenses")
+}

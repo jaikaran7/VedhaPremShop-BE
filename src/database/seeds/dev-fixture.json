@@ -1,0 +1,908 @@
+{
+  "company": {
+    "shopName": "Vedhaprem Mandi Onion Wholesalers",
+    "mandiLicenseNo": "APMC/PUN/2021/ONN-8842",
+    "gstNo": "27AABCV8892L1Z9",
+    "address": "Shop No. 42-44, APMC Market Yard, Gultekdi, Pune - 411037",
+    "phone": "+91 98450 11223",
+    "altPhone": "+91 20 2426 8899",
+    "email": "trade@vedhaprem-mandi.com",
+    "termsAndConditions": "1. Goods once inspected and sold will not be returned.\n2. Payment strictly within agreed credit days.\n3. Discrepancies in bag tare or weight must be notified within 24 hours of dispatch.",
+    "invoicePrefix": "VPN-INV",
+    "receiptPrefix": "VPN-REC"
+  },
+  "users": [
+    {
+      "key": "u-1",
+      "name": "Vedhaprem Reddy",
+      "username": "owner",
+      "email": "vedhaprem@mandi-onion.com",
+      "phone": "+91 98450 11223",
+      "role": "OWNER"
+    },
+    {
+      "key": "u-2",
+      "name": "Suresh Patil",
+      "username": "manager",
+      "email": "suresh@mandi-onion.com",
+      "phone": "+91 98450 44556",
+      "role": "MANAGER"
+    },
+    {
+      "key": "u-3",
+      "name": "Rajesh Kumar",
+      "username": "salesperson",
+      "email": "rajesh@mandi-onion.com",
+      "phone": "+91 98450 77889",
+      "role": "SALESPERSON"
+    }
+  ],
+  "marks": [
+    {
+      "code": "AA",
+      "name": "Grade AA (Big Premium)",
+      "description": "Extra large red onion, dry skin, tightly packed 50kg bags",
+      "defaultPurchaseRate": 47,
+      "defaultSellingRate": 69,
+      "qualityGrade": "PREMIUM",
+      "colorTag": "#005da7"
+    },
+    {
+      "code": "J",
+      "name": "Grade J (Medium Bold)",
+      "description": "Medium-bold 45-55mm uniform bulbs, excellent shelf life",
+      "defaultPurchaseRate": 44,
+      "defaultSellingRate": 64,
+      "qualityGrade": "GRADE_1",
+      "colorTag": "#2976c7"
+    },
+    {
+      "code": "K",
+      "name": "Grade K (Regular Medium)",
+      "description": "Regular commercial grade, suitable for hotels and retailers",
+      "defaultPurchaseRate": 40,
+      "defaultSellingRate": 58,
+      "qualityGrade": "GRADE_2",
+      "colorTag": "#535f70"
+    },
+    {
+      "code": "OK",
+      "name": "Grade OK (Small Golta)",
+      "description": "Small rounded golta onion, high demand for food processing",
+      "defaultPurchaseRate": 35,
+      "defaultSellingRate": 49,
+      "qualityGrade": "COMMERCIAL",
+      "colorTag": "#7f5300"
+    },
+    {
+      "code": "CV",
+      "name": "Grade CV (Chikan Select)",
+      "description": "Deep ruby red skin, high pungency Nashik origin",
+      "defaultPurchaseRate": 48,
+      "defaultSellingRate": 71,
+      "qualityGrade": "PREMIUM",
+      "colorTag": "#9c27b0"
+    },
+    {
+      "code": "TC",
+      "name": "Grade TC (Transport Cargo)",
+      "description": "Hard skin cured bulk stock ready for interstate dispatch",
+      "defaultPurchaseRate": 42,
+      "defaultSellingRate": 61,
+      "qualityGrade": "GRADE_1",
+      "colorTag": "#00796b"
+    }
+  ],
+  "products": [
+    {
+      "key": "prod-onions",
+      "code": "ONIONS",
+      "name": "Onions",
+      "status": "ACTIVE"
+    },
+    {
+      "key": "prod-garlic",
+      "code": "GARLIC",
+      "name": "Garlic",
+      "status": "ACTIVE"
+    },
+    {
+      "key": "prod-ginger",
+      "code": "GINGER",
+      "name": "Ginger",
+      "status": "ACTIVE"
+    }
+  ],
+  "customers": [
+    {
+      "key": "c-1",
+      "openingBalance": 150000,
+      "code": "CUST-001",
+      "name": "ABC Traders",
+      "phone": "+91 98220 12345",
+      "email": "procurement@abctraders.com",
+      "address": "Plot 12, Shivaji Market, Camp, Pune",
+      "marketLocation": "Pune Central",
+      "creditLimit": 250000,
+      "creditDays": 7,
+      "status": "ACTIVE",
+      "createdAt": "2026-01-10T10:00:00Z"
+    },
+    {
+      "key": "c-2",
+      "openingBalance": 85000,
+      "code": "CUST-002",
+      "name": "Shree Enterprises",
+      "phone": "+91 98221 67890",
+      "email": "shree.enterprises@gmail.com",
+      "address": "Shop 8, Katraj Mandi, Pune",
+      "marketLocation": "South Pune",
+      "creditLimit": 150000,
+      "creditDays": 10,
+      "status": "ACTIVE",
+      "createdAt": "2026-01-15T11:30:00Z"
+    },
+    {
+      "key": "c-3",
+      "openingBalance": 210000,
+      "code": "CUST-003",
+      "name": "Om Traders",
+      "phone": "+91 98222 34567",
+      "email": "om.traders.pune@yahoo.com",
+      "address": "Gala No. 19, Hadapsar Vegetable Yard, Pune",
+      "marketLocation": "Hadapsar",
+      "creditLimit": 300000,
+      "creditDays": 5,
+      "status": "ACTIVE",
+      "createdAt": "2026-02-01T09:15:00Z"
+    },
+    {
+      "key": "c-4",
+      "openingBalance": 45000,
+      "code": "CUST-004",
+      "name": "Patel & Co",
+      "phone": "+91 98223 98765",
+      "email": "patelandco.onions@gmail.com",
+      "address": "Near Old Bus Stand, Chinchwad, PCMC",
+      "marketLocation": "PCMC Industrial",
+      "creditLimit": 200000,
+      "creditDays": 14,
+      "status": "ACTIVE",
+      "createdAt": "2026-02-10T14:40:00Z"
+    }
+  ],
+  "vendors": [
+    {
+      "key": "v-1",
+      "code": "VEN-001",
+      "name": "Murade Traders",
+      "phone": "+91 94220 55112",
+      "email": "murade.lasalgaon@gmail.com",
+      "address": "Opposite APMC Yard, Lasalgaon, Nashik",
+      "mandiCity": "Lasalgaon (Nashik)",
+      "status": "ACTIVE",
+      "createdAt": "2026-01-05T08:00:00Z"
+    },
+    {
+      "key": "v-2",
+      "code": "VEN-002",
+      "name": "Local Supplier",
+      "phone": "+91 94221 66223",
+      "email": "manchar.farmers@gmail.com",
+      "address": "Ghodegaon Road, Manchar, Pune Rural",
+      "mandiCity": "Manchar",
+      "status": "ACTIVE",
+      "createdAt": "2026-01-12T09:30:00Z"
+    },
+    {
+      "key": "v-3",
+      "code": "VEN-003",
+      "name": "Kaveri Traders",
+      "phone": "+91 94222 77334",
+      "email": "kaveri.pimpalgaon@gmail.com",
+      "address": "Near Cold Storage, Pimpalgaon Baswant, Nashik",
+      "mandiCity": "Pimpalgaon Baswant",
+      "status": "ACTIVE",
+      "createdAt": "2026-01-20T10:00:00Z"
+    }
+  ],
+  "lots": [
+    {
+      "lotNumber": "LOT AP",
+      "productId": "prod-onions",
+      "vendorId": "v-1",
+      "purchaseBillNo": "PUR-2026-081",
+      "arrivalDate": "2026-09-28",
+      "marks": [
+        {
+          "markCode": "AA",
+          "initialBags": 100,
+          "initialWeightKg": 5200,
+          "remainingBags": 78,
+          "remainingWeightKg": 4056,
+          "purchaseRate": 47
+        },
+        {
+          "markCode": "J",
+          "initialBags": 80,
+          "initialWeightKg": 4100,
+          "remainingBags": 67,
+          "remainingWeightKg": 3434,
+          "purchaseRate": 44
+        },
+        {
+          "markCode": "K",
+          "initialBags": 50,
+          "initialWeightKg": 2500,
+          "remainingBags": 40,
+          "remainingWeightKg": 2050,
+          "purchaseRate": 40
+        }
+      ],
+      "notes": "Lasalgaon red onion, dry skin, three qualities"
+    },
+    {
+      "lotNumber": "LOT CV",
+      "productId": "prod-onions",
+      "vendorId": "v-3",
+      "purchaseBillNo": "PUR-2026-088",
+      "arrivalDate": "2026-09-30",
+      "marks": [
+        {
+          "markCode": "CV",
+          "initialBags": 120,
+          "initialWeightKg": 6000,
+          "remainingBags": 95,
+          "remainingWeightKg": 4750,
+          "purchaseRate": 48
+        },
+        {
+          "markCode": "OK",
+          "initialBags": 60,
+          "initialWeightKg": 3000,
+          "remainingBags": 50,
+          "remainingWeightKg": 2500,
+          "purchaseRate": 35
+        }
+      ],
+      "notes": "Pimpalgaon Baswant red onion"
+    },
+    {
+      "lotNumber": "LOT TC",
+      "productId": "prod-onions",
+      "vendorId": "v-2",
+      "purchaseBillNo": "PUR-2026-094",
+      "arrivalDate": "2026-10-01",
+      "marks": [
+        {
+          "markCode": "TC",
+          "initialBags": 150,
+          "initialWeightKg": 7500,
+          "remainingBags": 142,
+          "remainingWeightKg": 7100,
+          "purchaseRate": 42
+        },
+        {
+          "markCode": "AA",
+          "initialBags": 50,
+          "initialWeightKg": 2600,
+          "remainingBags": 48,
+          "remainingWeightKg": 2495,
+          "purchaseRate": 47
+        }
+      ],
+      "notes": "Manchar onion by tractor"
+    },
+    {
+      "lotNumber": "LOT DN",
+      "productId": "prod-onions",
+      "vendorId": "v-2",
+      "purchaseBillNo": "PUR-2026-070",
+      "arrivalDate": "2026-09-25",
+      "marks": [
+        {
+          "markCode": "OK",
+          "initialBags": 10,
+          "initialWeightKg": 500,
+          "remainingBags": 0,
+          "remainingWeightKg": 0,
+          "purchaseRate": 40
+        }
+      ],
+      "notes": "Manchar golta, fully sold"
+    },
+    {
+      "lotNumber": "LOT NS",
+      "productId": "prod-onions",
+      "vendorId": "v-2",
+      "purchaseBillNo": "PUR-2026-071",
+      "arrivalDate": "2026-09-27",
+      "marks": [
+        {
+          "markCode": "TC",
+          "initialBags": 20,
+          "initialWeightKg": 1000,
+          "remainingBags": 20,
+          "remainingWeightKg": 1000,
+          "purchaseRate": 42
+        }
+      ],
+      "notes": "Manchar cargo still on the floor"
+    },
+    {
+      "lotNumber": "LOT GL",
+      "productId": "prod-garlic",
+      "vendorId": "v-3",
+      "purchaseBillNo": "PUR-2026-101",
+      "arrivalDate": "2026-10-08",
+      "marks": [
+        {
+          "markCode": "BOLD",
+          "initialBags": 60,
+          "initialWeightKg": 2400,
+          "remainingBags": 60,
+          "remainingWeightKg": 2400,
+          "purchaseRate": 145
+        },
+        {
+          "markCode": "MEDIUM",
+          "initialBags": 40,
+          "initialWeightKg": 1400,
+          "remainingBags": 40,
+          "remainingWeightKg": 1400,
+          "purchaseRate": 110
+        }
+      ],
+      "notes": "Nashik garlic, bold and medium"
+    },
+    {
+      "lotNumber": "LOT GS",
+      "productId": "prod-garlic",
+      "vendorId": "v-2",
+      "purchaseBillNo": "PUR-2026-104",
+      "arrivalDate": "2026-10-10",
+      "marks": [
+        {
+          "markCode": "LOCAL",
+          "initialBags": 30,
+          "initialWeightKg": 900,
+          "remainingBags": 30,
+          "remainingWeightKg": 900,
+          "purchaseRate": 95
+        }
+      ],
+      "notes": "Manchar garlic, single quality"
+    },
+    {
+      "lotNumber": "LOT GN",
+      "productId": "prod-ginger",
+      "vendorId": "v-1",
+      "purchaseBillNo": "PUR-2026-109",
+      "arrivalDate": "2026-10-12",
+      "marks": [
+        {
+          "markCode": "FRESH",
+          "initialBags": 40,
+          "initialWeightKg": 2000,
+          "remainingBags": 40,
+          "remainingWeightKg": 2000,
+          "purchaseRate": 80
+        }
+      ],
+      "notes": "Lasalgaon fresh ginger"
+    },
+    {
+      "lotNumber": "LOT GP",
+      "productId": "prod-ginger",
+      "vendorId": "v-3",
+      "purchaseBillNo": "PUR-2026-112",
+      "arrivalDate": "2026-10-14",
+      "marks": [
+        {
+          "markCode": "MATURE",
+          "initialBags": 25,
+          "initialWeightKg": 1250,
+          "remainingBags": 25,
+          "remainingWeightKg": 1250,
+          "purchaseRate": 72
+        }
+      ],
+      "notes": "Pimpalgaon mature ginger"
+    }
+  ],
+  "purchases": [
+    {
+      "billNumber": "PUR-2026-081",
+      "vendorId": "v-1",
+      "productId": "prod-onions",
+      "date": "2026-09-28",
+      "lotNumber": "LOT AP",
+      "notes": "Lasalgaon red onion, dry skin, three qualities",
+      "items": [
+        {
+          "markCode": "AA",
+          "bags": 100,
+          "weightKg": 5200,
+          "ratePerKg": 47,
+          "totalAmount": 244400
+        },
+        {
+          "markCode": "J",
+          "bags": 80,
+          "weightKg": 4100,
+          "ratePerKg": 44,
+          "totalAmount": 180400
+        },
+        {
+          "markCode": "K",
+          "bags": 50,
+          "weightKg": 2500,
+          "ratePerKg": 40,
+          "totalAmount": 100000
+        }
+      ],
+      "expenses": [
+        {
+          "type": "FREIGHT",
+          "amount": 8500,
+          "description": "Nashik to Pune truck freight"
+        },
+        {
+          "type": "HAMALI",
+          "amount": 2300,
+          "description": "Unloading charges @ ₹10/bag"
+        },
+        {
+          "type": "MANDI_TAX",
+          "amount": 3200,
+          "description": "Mandi APMC cess"
+        },
+        {
+          "type": "OTHER",
+          "expenseTypeId": "cet-scale",
+          "expenseTypeName": "Scale",
+          "amount": 1200,
+          "description": "Weighbridge scale"
+        },
+        {
+          "type": "OTHER",
+          "expenseTypeId": "cet-term",
+          "expenseTypeName": "Term",
+          "amount": 2300,
+          "description": "Mandi term"
+        },
+        {
+          "type": "OTHER",
+          "expenseTypeId": "cet-loading-bill",
+          "expenseTypeName": "Loading",
+          "amount": 2300,
+          "description": "Yard loading"
+        }
+      ]
+    },
+    {
+      "billNumber": "PUR-2026-088",
+      "vendorId": "v-3",
+      "productId": "prod-onions",
+      "date": "2026-09-30",
+      "lotNumber": "LOT CV",
+      "notes": "Pimpalgaon Baswant red onion",
+      "items": [
+        {
+          "markCode": "CV",
+          "bags": 120,
+          "weightKg": 6000,
+          "ratePerKg": 48,
+          "totalAmount": 288000
+        },
+        {
+          "markCode": "OK",
+          "bags": 60,
+          "weightKg": 3000,
+          "ratePerKg": 35,
+          "totalAmount": 105000
+        }
+      ],
+      "expenses": [
+        {
+          "type": "FREIGHT",
+          "amount": 7200,
+          "description": "Direct tempo transport"
+        },
+        {
+          "type": "HAMALI",
+          "amount": 1800,
+          "description": "Unloading charges"
+        },
+        {
+          "type": "OTHER",
+          "expenseTypeId": "cet-scale",
+          "expenseTypeName": "Scale",
+          "amount": 900,
+          "description": "Weighbridge scale"
+        },
+        {
+          "type": "OTHER",
+          "expenseTypeId": "cet-term",
+          "expenseTypeName": "Term",
+          "amount": 1800,
+          "description": "Mandi term"
+        },
+        {
+          "type": "OTHER",
+          "expenseTypeId": "cet-loading-bill",
+          "expenseTypeName": "Loading",
+          "amount": 1800,
+          "description": "Yard loading"
+        }
+      ]
+    },
+    {
+      "billNumber": "PUR-2026-094",
+      "vendorId": "v-2",
+      "productId": "prod-onions",
+      "date": "2026-10-01",
+      "lotNumber": "LOT TC",
+      "notes": "Manchar onion by tractor",
+      "items": [
+        {
+          "markCode": "TC",
+          "bags": 150,
+          "weightKg": 7500,
+          "ratePerKg": 42,
+          "totalAmount": 315000
+        },
+        {
+          "markCode": "AA",
+          "bags": 50,
+          "weightKg": 2600,
+          "ratePerKg": 47,
+          "totalAmount": 122200
+        }
+      ],
+      "expenses": [
+        {
+          "type": "HAMALI",
+          "amount": 2000,
+          "description": "Mandi unloading"
+        },
+        {
+          "type": "OTHER",
+          "expenseTypeId": "cet-scale",
+          "expenseTypeName": "Scale",
+          "amount": 1000,
+          "description": "Weighbridge scale"
+        },
+        {
+          "type": "OTHER",
+          "expenseTypeId": "cet-term",
+          "expenseTypeName": "Term",
+          "amount": 2000,
+          "description": "Mandi term"
+        },
+        {
+          "type": "OTHER",
+          "expenseTypeId": "cet-loading-bill",
+          "expenseTypeName": "Loading",
+          "amount": 2000,
+          "description": "Yard loading"
+        }
+      ]
+    },
+    {
+      "billNumber": "PUR-2026-070",
+      "vendorId": "v-2",
+      "productId": "prod-onions",
+      "date": "2026-09-25",
+      "lotNumber": "LOT DN",
+      "notes": "Manchar golta, fully sold",
+      "items": [
+        {
+          "markCode": "OK",
+          "bags": 10,
+          "weightKg": 500,
+          "ratePerKg": 40,
+          "totalAmount": 20000
+        }
+      ],
+      "expenses": [
+        {
+          "type": "OTHER",
+          "amount": 1000,
+          "description": "Unloading on LOT DN"
+        },
+        {
+          "type": "OTHER",
+          "expenseTypeId": "cet-scale",
+          "expenseTypeName": "Scale",
+          "amount": 200,
+          "description": "Weighbridge scale"
+        },
+        {
+          "type": "OTHER",
+          "expenseTypeId": "cet-term",
+          "expenseTypeName": "Term",
+          "amount": 100,
+          "description": "Mandi term"
+        },
+        {
+          "type": "OTHER",
+          "expenseTypeId": "cet-loading-bill",
+          "expenseTypeName": "Loading",
+          "amount": 100,
+          "description": "Yard loading"
+        }
+      ]
+    },
+    {
+      "billNumber": "PUR-2026-071",
+      "vendorId": "v-2",
+      "productId": "prod-onions",
+      "date": "2026-09-27",
+      "lotNumber": "LOT NS",
+      "notes": "Manchar cargo still on the floor",
+      "items": [
+        {
+          "markCode": "TC",
+          "bags": 20,
+          "weightKg": 1000,
+          "ratePerKg": 42,
+          "totalAmount": 42000
+        }
+      ],
+      "expenses": [
+        {
+          "type": "OTHER",
+          "expenseTypeId": "cet-scale",
+          "expenseTypeName": "Scale",
+          "amount": 300,
+          "description": "Weighbridge scale"
+        },
+        {
+          "type": "OTHER",
+          "expenseTypeId": "cet-term",
+          "expenseTypeName": "Term",
+          "amount": 200,
+          "description": "Mandi term"
+        },
+        {
+          "type": "OTHER",
+          "expenseTypeId": "cet-loading-bill",
+          "expenseTypeName": "Loading",
+          "amount": 200,
+          "description": "Yard loading"
+        }
+      ]
+    },
+    {
+      "billNumber": "PUR-2026-101",
+      "vendorId": "v-3",
+      "productId": "prod-garlic",
+      "date": "2026-10-08",
+      "lotNumber": "LOT GL",
+      "notes": "Nashik garlic, bold and medium",
+      "items": [
+        {
+          "markCode": "BOLD",
+          "bags": 60,
+          "weightKg": 2400,
+          "ratePerKg": 145,
+          "totalAmount": 348000
+        },
+        {
+          "markCode": "MEDIUM",
+          "bags": 40,
+          "weightKg": 1400,
+          "ratePerKg": 110,
+          "totalAmount": 154000
+        }
+      ],
+      "expenses": [
+        {
+          "type": "FREIGHT",
+          "amount": 4500,
+          "description": "Nashik to Pune garlic truck"
+        },
+        {
+          "type": "OTHER",
+          "expenseTypeId": "cet-scale",
+          "expenseTypeName": "Scale",
+          "amount": 800,
+          "description": "Weighbridge scale"
+        },
+        {
+          "type": "OTHER",
+          "expenseTypeId": "cet-term",
+          "expenseTypeName": "Term",
+          "amount": 1000,
+          "description": "Mandi term"
+        },
+        {
+          "type": "OTHER",
+          "expenseTypeId": "cet-loading-bill",
+          "expenseTypeName": "Loading",
+          "amount": 1000,
+          "description": "Yard loading"
+        }
+      ]
+    },
+    {
+      "billNumber": "PUR-2026-104",
+      "vendorId": "v-2",
+      "productId": "prod-garlic",
+      "date": "2026-10-10",
+      "lotNumber": "LOT GS",
+      "notes": "Manchar garlic, single quality",
+      "items": [
+        {
+          "markCode": "LOCAL",
+          "bags": 30,
+          "weightKg": 900,
+          "ratePerKg": 95,
+          "totalAmount": 85500
+        }
+      ],
+      "expenses": [
+        {
+          "type": "OTHER",
+          "expenseTypeId": "cet-scale",
+          "expenseTypeName": "Scale",
+          "amount": 400,
+          "description": "Weighbridge scale"
+        },
+        {
+          "type": "OTHER",
+          "expenseTypeId": "cet-term",
+          "expenseTypeName": "Term",
+          "amount": 300,
+          "description": "Mandi term"
+        },
+        {
+          "type": "OTHER",
+          "expenseTypeId": "cet-loading-bill",
+          "expenseTypeName": "Loading",
+          "amount": 300,
+          "description": "Yard loading"
+        }
+      ]
+    },
+    {
+      "billNumber": "PUR-2026-109",
+      "vendorId": "v-1",
+      "productId": "prod-ginger",
+      "date": "2026-10-12",
+      "lotNumber": "LOT GN",
+      "notes": "Lasalgaon fresh ginger",
+      "items": [
+        {
+          "markCode": "FRESH",
+          "bags": 40,
+          "weightKg": 2000,
+          "ratePerKg": 80,
+          "totalAmount": 160000
+        }
+      ],
+      "expenses": [
+        {
+          "type": "FREIGHT",
+          "amount": 2500,
+          "description": "Lasalgaon ginger tempo"
+        },
+        {
+          "type": "OTHER",
+          "expenseTypeId": "cet-scale",
+          "expenseTypeName": "Scale",
+          "amount": 600,
+          "description": "Weighbridge scale"
+        },
+        {
+          "type": "OTHER",
+          "expenseTypeId": "cet-term",
+          "expenseTypeName": "Term",
+          "amount": 400,
+          "description": "Mandi term"
+        },
+        {
+          "type": "OTHER",
+          "expenseTypeId": "cet-loading-bill",
+          "expenseTypeName": "Loading",
+          "amount": 400,
+          "description": "Yard loading"
+        }
+      ]
+    },
+    {
+      "billNumber": "PUR-2026-112",
+      "vendorId": "v-3",
+      "productId": "prod-ginger",
+      "date": "2026-10-14",
+      "lotNumber": "LOT GP",
+      "notes": "Pimpalgaon mature ginger",
+      "items": [
+        {
+          "markCode": "MATURE",
+          "bags": 25,
+          "weightKg": 1250,
+          "ratePerKg": 72,
+          "totalAmount": 90000
+        }
+      ],
+      "expenses": [
+        {
+          "type": "OTHER",
+          "expenseTypeId": "cet-scale",
+          "expenseTypeName": "Scale",
+          "amount": 500,
+          "description": "Weighbridge scale"
+        },
+        {
+          "type": "OTHER",
+          "expenseTypeId": "cet-term",
+          "expenseTypeName": "Term",
+          "amount": 250,
+          "description": "Mandi term"
+        },
+        {
+          "type": "OTHER",
+          "expenseTypeId": "cet-loading-bill",
+          "expenseTypeName": "Loading",
+          "amount": 250,
+          "description": "Yard loading"
+        }
+      ]
+    }
+  ],
+  "costingExpenseTypes": [
+    {
+      "key": "cet-scale",
+      "name": "Scale",
+      "kind": "PURCHASE"
+    },
+    {
+      "key": "cet-term",
+      "name": "Term",
+      "kind": "PURCHASE"
+    },
+    {
+      "key": "cet-loading-bill",
+      "name": "Loading",
+      "kind": "PURCHASE"
+    },
+    {
+      "key": "cet-commission",
+      "name": "Commission",
+      "kind": "PURCHASE"
+    },
+    {
+      "key": "cet-cess",
+      "name": "Cess",
+      "kind": "PURCHASE"
+    },
+    {
+      "key": "cet-other-purchase",
+      "name": "Other Purchase Expense",
+      "kind": "PURCHASE"
+    },
+    {
+      "key": "cet-transport",
+      "name": "Transport",
+      "kind": "STOCK_RECEIVING"
+    },
+    {
+      "key": "cet-loading",
+      "name": "Loading/Unloading",
+      "kind": "STOCK_RECEIVING"
+    },
+    {
+      "key": "cet-retail-commission",
+      "name": "Retail Commission",
+      "kind": "STOCK_RECEIVING"
+    },
+    {
+      "key": "cet-other-receiving",
+      "name": "Other",
+      "kind": "STOCK_RECEIVING"
+    }
+  ],
+  "marginComponents": []
+}
