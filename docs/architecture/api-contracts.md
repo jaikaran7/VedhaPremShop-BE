@@ -53,7 +53,7 @@ Status codes: 200/201/204 success · 400 validation · 401 not signed in / expir
 | POST `/stock/opening` | O, M | `{lotNumber, markCode, bags, weightKg}` → `StockAdjustment` | Adds the mark to an existing lot if new |
 | GET `/sales` | all | `?from&to&limit&offset` → `Sale[]` | `paidAmount`, `balanceDue`, `paymentStatus` live from allocations |
 | GET `/sales/:id` | all | → `Sale` | |
-| POST `/sales` | all | see below → `Sale` (201) | Idempotency-Key supported |
+| POST `/sales` | all | see below → `Sale` (201) | Idempotency-Key supported. A `date` other than today posts at once (window 365 days back, 30 ahead) |
 | POST `/sales/:id/cancel` | all | `{reason}` → `{status:'APPLIED', sale}` or `{status:'PENDING_APPROVAL', approvalId}` | Owner applies now; others file a request. Stock returns; receipts become customer credit (counter money refunded) |
 | POST `/sales/:id/rebill` | all | new-bill body + `{reason}` → same union | Cancel + new bill on the original date; Owner now, others via approval |
 | GET `/approvals` | all | → `ApprovalRequest[]` newest first | Staff can see the queue |

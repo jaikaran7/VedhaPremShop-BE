@@ -46,7 +46,7 @@ export async function loadCustomer(tx: Tx, actor: Actor, customerId?: string | n
 
 /**
  * Prices, numbers and stores a bill and takes its stock. Financial posting is separate (postBillFinancials)
- * because a backdated bill holds stock while it waits for the Owner's approval.
+ * (requests for the Owner's approval of an older, still-waiting bill use it too).
  */
 export async function insertBill(tx: Tx, actor: Actor, org: Organization, input: CreateSaleDto, opts: {
   customer: BillCustomer | null;

@@ -27,7 +27,8 @@ in the frontend):
 | Bills, receipts, customers (create, contact edits) | ✓ | ✓ | ✓ |
 | Customer credit terms/status, delete customer | ✓ | ✓ | — |
 | Stock adjustments, opening stock | ✓ | ✓ | — |
-| Cancel / rebill a bill, bill dated another day | ✓ applies at once | request → Owner | request → Owner |
+| Bill dated another day | ✓ posts at once | ✓ posts at once | ✓ posts at once |
+| Cancel / rebill a bill | ✓ applies at once | request → Owner | request → Owner |
 | See the approval queue | ✓ | ✓ (read) | ✓ (read) |
 | Decide an approval | ✓ | — | — |
 | Vendors, purchases and receiving, reports, costing settings (read), audit, users list | ✓ | ✓ | — |

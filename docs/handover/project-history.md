@@ -58,6 +58,10 @@ report on the server (ported verbatim, the frontend's own tests run unchanged); 
 `staleTime` 30 s and targeted invalidation; query-count tests against N+1. Found that the dashboard's "Average Floor Rate" is hard-coded text.
 Caught during verification: the screen echoes `receiptStatus: 'RECEIVED'` on a correction, which the server wrongly refused (fixed and tested).
 
+### Session 6 — past-dated sales need no approval
+The owner confirmed: staff can back-date sales bills with no approval; the Owner's approval stays for cancel and edit requests. `create` always
+posts a bill at once; the Approvals screen text and the New Sale notice were updated; the backdate tests were rewritten.
+
 ## Bugs found and fixed along the way (session 1–2, from the transcript) [claimed]
 Unqualified Drizzle SQL fragments broke a correlated subquery; Drizzle-wrapped Postgres errors hid unique-violation handling; test harness
 ordering (supertest) and parallel e2e files against one DB. All moot after the Prisma switch except the lessons: run e2e with `--runInBand`,

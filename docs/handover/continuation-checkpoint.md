@@ -24,9 +24,8 @@ Read this first. It links to the other handover documents instead of repeating t
 2. Check `git status` in both repos.
 
 ### 1. Owner confirmations ([questions-for-owner](questions-for-owner.md), Part 2)
-Most important: **past-dated sales bills** (kept needing Owner approval for staff; the owner's latest wording may mean no approval). One-line
-change in `modules/sales/sales.service.ts` (`needsApproval`). Also: dashboard "Average Floor Rate" is hard-coded text in
-`OwnerDashboard.tsx`; owner must pick simple / stock-weighted / sales-weighted before it is made real.
+Past-dated sales bills are decided: no approval (session 6). Remaining: the dashboard "Average Floor Rate" is hard-coded text in
+`OwnerDashboard.tsx`; the owner must pick simple / stock-weighted / sales-weighted before it is made real.
 
 ### 2. Next implementation candidates (after the owner answers)
 1. Make "Average Floor Rate" real (small).

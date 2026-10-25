@@ -153,39 +153,29 @@ describe('stock and price guards', () => {
 });
 
 describe('bills dated another day', () => {
-  it('staff backdated bill holds stock and waits for the owner; approval posts it on that date', async () => {
+  it('a staff bill dated another day posts at once: stock, receivable and receipt are all on that date, no approval', async () => {
     const before = await lotMark('LOT AP', 'AA');
-    const res = await h.http().post('/api/v1/sales').set(cashier).send(sale({ date: daysAgo(2), tenders: [{ method: 'CASH', amount: 1000 }] })).expect(201);
-    expect(res.body).toMatchObject({ status: 'PENDING_APPROVAL', date: daysAgo(2), paidAmount: 0, balanceDue: 0, tenders: [{ method: 'CASH', amount: 1000 }] });
+    const res = await h.http().post('/api/v1/sales').set(cashier).send(sale({ date: daysAgo(2), dateReason: "Yesterday's slip entered late", tenders: [{ method: 'CASH', amount: 1000 }] })).expect(201);
+    expect(res.body).toMatchObject({ status: 'CONFIRMED', date: daysAgo(2), paidAmount: 1000, balanceDue: TOTAL - 1000 });
     expect((await lotMark('LOT AP', 'AA')).remainingBags).toBe(before.remainingBags - 3);
-    expect(await outstanding('CUST-001')).toBe(150_000);
-
-    const [request] = await approvals();
-    expect(request).toMatchObject({ requestType: 'BACKDATED_SALE', status: 'PENDING', referenceNo: res.body.billNumber });
-    await h.http().post(`/api/v1/approvals/${request!.id}`).set(cashier).send({ action: 'APPROVE' }).expect(403);
-    await h.http().post(`/api/v1/approvals/${request!.id}`).set(manager).send({ action: 'APPROVE' }).expect(403);
-    await h.http().post(`/api/v1/approvals/${request!.id}`).set(owner).send({ action: 'APPROVE', notes: 'Yesterday slip' }).expect(204);
-
-    expect((await h.http().get(`/api/v1/sales/${res.body.id}`).set(owner)).body).toMatchObject({ status: 'CONFIRMED', paidAmount: 1000, balanceDue: TOTAL - 1000 });
     expect(await outstanding('CUST-001')).toBe(150_000 + TOTAL - 1000);
-    const receipts = (await h.http().get('/api/v1/payments').set(owner)).body;
-    expect(receipts[0]).toMatchObject({ date: daysAgo(2), amount: 1000 });
-    await h.http().post(`/api/v1/approvals/${request!.id}`).set(owner).send({ action: 'APPROVE' }).expect(409);
+    expect((await h.http().get('/api/v1/payments').set(owner)).body[0]).toMatchObject({ date: daysAgo(2), amount: 1000 });
+    expect(await approvals()).toEqual([]); // nothing waits for the owner
+    expect(await h.db.auditLog.count({ where: { action: 'CREATE_SALE', details: { contains: `dated ${daysAgo(2)}` } } })).toBe(1);
   });
 
-  it('rejecting a backdated bill returns its stock and cancels it', async () => {
-    const before = await lotMark('LOT AP', 'AA');
-    const res = await h.http().post('/api/v1/sales').set(cashier).send(sale({ date: daysAgo(1) })).expect(201);
-    const [request] = await approvals();
-    await h.http().post(`/api/v1/approvals/${request!.id}`).set(owner).send({ action: 'REJECT', notes: 'Wrong date' }).expect(204);
-    expect((await h.http().get(`/api/v1/sales/${res.body.id}`).set(owner)).body).toMatchObject({ status: 'CANCELLED' });
-    expect(await lotMark('LOT AP', 'AA')).toEqual(before);
-  });
-
-  it('the owner\'s own backdated bill posts at once; dates far away are refused', async () => {
-    const res = await h.http().post('/api/v1/sales').set(owner).send(sale({ date: daysAgo(3) })).expect(201);
-    expect(res.body).toMatchObject({ status: 'CONFIRMED', date: daysAgo(3) });
+  it('the manager and the owner can back-date too; dates far away are still refused', async () => {
+    expect((await h.http().post('/api/v1/sales').set(manager).send(sale({ date: daysAgo(1) })).expect(201)).body).toMatchObject({ status: 'CONFIRMED', date: daysAgo(1) });
+    expect((await h.http().post('/api/v1/sales').set(owner).send(sale({ date: daysAgo(3) })).expect(201)).body).toMatchObject({ status: 'CONFIRMED', date: daysAgo(3) });
     await h.http().post('/api/v1/sales').set(cashier).send(sale({ date: daysAgo(400) })).expect(400);
+    expect(await approvals()).toEqual([]);
+  });
+
+  it('cancelling or editing such a bill still goes to the owner', async () => {
+    const bill = (await h.http().post('/api/v1/sales').set(cashier).send(sale({ date: daysAgo(1) })).expect(201)).body as { id: string };
+    const res = await h.http().post(`/api/v1/sales/${bill.id}/cancel`).set(cashier).send({ reason: 'Duplicate slip' }).expect(200);
+    expect(res.body.status).toBe('PENDING_APPROVAL');
+    expect((await approvals())[0]).toMatchObject({ requestType: 'SALE_CANCEL', status: 'PENDING' });
   });
 });
 

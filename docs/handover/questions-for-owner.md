@@ -33,11 +33,9 @@ sales, bills, payments, expenses or vendors** (no N+1). No Redis: a small in-mem
 
 ## Part 2 — Please confirm
 
-**1. Past-dated *sales* bills: do they still need your approval?** *(most important)*
-You said past-dated bills can be done by the salesperson without a fuss ("change the date to yesterday and proceed"). Earlier you had asked
-that a sale on another day go to the super admin for approval. Your latest answer could be read either way for **sales**, so I kept the
-earlier rule for sales (staff-dated bills wait for you; your own post at once) and applied "no approval" to **vendor bills and expenses**,
-where you were clear. If you want sales bills to need no approval either, it is a one-line change. Tell me.
+**1. Past-dated sales bills — decided (session 6): no approval for staff.**
+A sales bill dated another day posts at once for anyone (stock, balance and any payment on that date). The Owner's approval is kept only for
+**cancel** and **edit bill** requests. Nothing to confirm.
 
 **2. Staff now see vendor bill amounts and the costing rates.**
 To enter, correct and receive vendor bills, a salesperson must see the rates on those bills and the costing settings (default margin, extra

@@ -15,7 +15,7 @@ for the app), and exercised from the frontend where a screen exists. Handover de
 | 7 | Purchases, receiving (port of `utils/receiving.ts` + `utils/costing.ts`), vendor payables, costing settings, `/reports` snapshot | **Done (session 3)** | `test/purchases.e2e.spec.ts` (14), `receiving.calc.spec.ts` (8), frontend-vs-server parity script, Neon dev migrated |
 | 8 | Dashboard/report aggregates in SQL, paginated history, metric definitions from `business-domain.md` | Planned | — |
 | 9 | Hardening: RLS, APM, load test, backup drill, dependency overrides, production deploy | Planned | — |
-| 6b | Backdated-bill approvals, cancel/rebill, advances, Prisma + Neon switch | Done (session 2); new frontend screens typechecked, not browser-tested | `test/sales.e2e.spec.ts` |
+| 6b | Cancel/rebill approvals (back-dated bills need none since session 6), advances, Prisma + Neon switch | Done (session 2); new frontend screens typechecked, not browser-tested | `test/sales.e2e.spec.ts` |
 | 8a | Expenses, expense categories, cash accounts, vendor payments (Collections screen) | **Done (session 4)** | `test/expenses.e2e.spec.ts` (8), `test/business-flow.e2e.spec.ts` (1), Neon dev migrated |
 
 ## Acceptance criteria for Phase 7 (met, except as noted)

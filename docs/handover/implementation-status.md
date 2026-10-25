@@ -15,7 +15,7 @@ Statuses: **Verified complete** · **Implemented, unverified** · **Partial** ·
 | Suppliers (vendors) | Verified complete (core) | `modules/vendors` | CRUD; payable = bills − vendor payments | Advance / opening balance / returns (questions 1, 2, 4); distributor link has no endpoints (D9) | Owner answers |
 | Inventory / lots | Verified complete | `modules/inventory`, `stock-ledger.ts` | Lots derived from marks; atomic conditional stock change | — | — |
 | Stock movements | Verified complete | `StockMovement`, `reconciliation.ts` | Ledger + `stockDrift`; PURCHASE_IN now included | — | — |
-| New Sale | Verified complete (API) | `modules/sales`, `test/sales.e2e.spec.ts` | Server totals, idempotency, atomic stock, backdate approval, cancel/rebill | New FE parts (date picker, rebill mode, credit warning) are **typechecked only**, not browser-tested | Click-through of the five flows |
+| New Sale | Verified complete (API) | `modules/sales`, `test/sales.e2e.spec.ts` | Server totals, idempotency, atomic stock, bills on any date post at once, cancel/rebill with Owner approval | New FE parts (date picker, rebill mode, credit warning) are **typechecked only**, not browser-tested | Click-through of the five flows |
 | Sales & invoices | Verified complete (API) | same | List/detail, statuses, printable data | — | — |
 | Payments | Verified complete (API) | `modules/payments` | Allocation, advance, refund on counter cancel | Receipt screens not browser-tested | Click-through |
 | Receivables | Verified complete | `receivables.ts`, `receivableDrift` | Signed balance from the ledger | — | — |

@@ -53,9 +53,9 @@ organization (see `system-architecture.md §Tenancy`).
 8. Stock: each line references a specific lot + mark of the sale's product. No FIFO — the cashier chooses the lot.
    Σbags and Σkg per lot-mark must be available; deducted atomically (see `database-design.md §Concurrency`).
    Negative stock is never allowed.
-9. Sale date defaults to today in the organization timezone (Asia/Kolkata). The cashier may pick another date; such a bill is
-   `PENDING_APPROVAL` (stock held, no receivable or receipt) until the Owner approves, and rejecting it cancels it and returns the stock.
-   The Owner's own backdated bill posts directly. (D1)
+9. Sale date defaults to today in the organization timezone (Asia/Kolkata). Any staff member may pick another date (365 days back, 30 ahead);
+   the bill posts at once with stock, receivable and receipts on that date, and the audit trail notes the date and the reason typed. No approval. (D1)
+   Only cancelling or editing a bill needs the Owner (rule 11). Bills left `PENDING_APPROVAL` by the earlier rule can still be approved or rejected.
 10. Bill numbers: `{invoicePrefix}-{n}`, gap-free per organization, allocated inside the sale transaction.
 11. Cancel and rebill ("edit bill") replace the old sale-edit request. The Owner's change applies at once; anyone else's becomes an
     approval request. Cancelling restores stock with reversal movements; money already received on the bill is released as the

@@ -7,7 +7,7 @@ as the safest option · **?** = open. Full rule detail lives in `docs/architectu
 
 | # | Decision | Implemented as |
 |---|---|---|
-| D1 | Bills default to today's date but the date can be changed. A bill on any other day waits for the super admin (Owner). | `POST /sales {date, dateReason}`: non-today → status `PENDING_APPROVAL`, stock held, no receivable/receipt until approved. **An Owner's own backdated bill posts directly** (P: the Owner is the approver). |
+| D1 | Bills default to today's date but the date can be changed. **Superseded (session 6): a bill on another day needs no approval, for any staff member.** | `POST /sales {date, dateReason}`: posts at once (stock, receivable and receipts on that date); window 365 days back / 30 forward; recorded in the audit trail. Cancel and edit requests still need the Owner (D8). |
 | D2 | Employees can see the approval list but not approve. | `GET /approvals` for all roles; `POST /approvals/:id` Owner-only (route guard). |
 | D3 | Overpayment is accepted; the excess is shown as a positive balance and consumed on the customer's next bill. | Receipt keeps unused amount as an **advance**; `advanceAmount` on `Customer`; `settleCustomer` applies it oldest-debt-first. |
 | D4 | A BLOCKED or over-limit customer can still be billed; show a red warning. | No server refusal. FE red warning on New Sale. |
@@ -62,5 +62,5 @@ The plain-language version, with examples and suggestions, is `questions-for-own
 | Q10 | Vendor payments (advance, opening balance, per-bill). | **Partly resolved:** the frontend's "Vendor Payments" tab is Purchase Payments expenses; now each names a vendor and reduces the payable. Advance and opening balance still open (`questions-for-owner.md` #1–#3). |
 | Q11 | Must every consignment carry Scale, Term and Loading (the New Purchase screen enforces it)? | Enforced by the UI only; the server accepts a bill without them. |
 | Q12 | Do purchases need a date rule like sales (backdating approval)? | No rule; any date accepted. |
-| Q13 | Should the Owner's own backdated bill really skip approval? | Posts directly. |
+| Q13 | Should the Owner's own backdated bill skip approval? | Resolved (session 6): nobody's back-dated bill needs approval. |
 | Q14 | Expenses: who may record, date rules, opening account balances. | Implemented: Owner/Manager, any date, immutable rows, accounts open at ₹0. See `questions-for-owner.md` #11–#12. |

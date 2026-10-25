@@ -11,7 +11,7 @@ import { cancelBill, COUNTER_SALE, insertBill, loadCustomer, postBillFinancials 
 import { paymentStatusFor } from './sales.calc';
 import type { CreateSaleDto, SalesQueryDto } from './sales.dto';
 
-/** How far a bill date may move from today. Bills not dated today need the Owner. */
+/** How far a bill date may move from today. A bill on another day posts at once; it is recorded in the audit trail. */
 export const MAX_BACKDATE_DAYS = 365;
 export const MAX_FORWARD_DAYS = 30;
 
@@ -24,8 +24,8 @@ export class SalesService {
   constructor(private readonly db: PrismaService) {}
 
   /**
-   * Posts a bill. Today's bills post fully at once. A bill dated another day by staff holds its stock and waits
-   * as PENDING_APPROVAL (no receivable, no receipts) until the Owner approves; the Owner's own such bills post directly.
+   * Posts a bill at once, whoever enters it and whatever day it is dated (within the allowed window): stock, receivable
+   * and receipts are all posted on that date. Only cancelling and editing a bill need the Owner (requestCancel / requestRebill).
    * With an Idempotency-Key, a retry returns the bill created by the first attempt.
    */
   async create(actor: Actor, dto: CreateSaleDto, idempotencyKey?: string) {
@@ -38,26 +38,14 @@ export class SalesService {
         const org = await tx.organization.findUniqueOrThrow({ where: { id: actor.organizationId } });
         const today = businessDate(org.timezone);
         const saleDate = checkedSaleDate(dto.date, today);
-        const needsApproval = saleDate !== today && actor.role !== 'OWNER';
         const customer = await loadCustomer(tx, actor, dto.customerId);
-        const bill = await insertBill(tx, actor, org, dto, {
-          customer, saleDate, status: needsApproval ? 'PENDING_APPROVAL' : 'CONFIRMED', idempotencyKey,
-        });
-        if (needsApproval) {
-          await tx.approval.create({ data: {
-            organizationId: actor.organizationId, type: 'BACKDATED_SALE', saleId: bill.saleId, referenceNo: bill.billNumber,
-            requestedById: actor.userId, requestedByName: actor.name, requestedByRole: actor.role,
-            reason: dto.dateReason?.trim() || `Bill dated ${saleDate} instead of today (${today})`,
-            originalData: { date: today },
-            requestedData: { date: saleDate, totalAmount: fromPaise(bill.totalPaise), customerName: customer?.name ?? COUNTER_SALE },
-          } });
-        } else {
-          await postBillFinancials(tx, actor, org, { ...bill, saleDate, customer, description: await describe(tx, bill.saleId) });
-        }
+        const bill = await insertBill(tx, actor, org, dto, { customer, saleDate, status: 'CONFIRMED', idempotencyKey });
+        await postBillFinancials(tx, actor, org, { ...bill, saleDate, customer, description: await describe(tx, bill.saleId) });
+        const reason = dto.dateReason?.trim();
         await audit(tx, actor, {
           action: 'CREATE_SALE', entity: 'SALE', entityId: bill.saleId,
           details: `Sale ${bill.billNumber} for ${customer?.name ?? COUNTER_SALE}: ₹${fromPaise(bill.totalPaise).toLocaleString('en-IN')}`
-            + (saleDate !== today ? ` dated ${saleDate}${needsApproval ? ', awaiting owner approval' : ' by the owner'}` : ''),
+            + (saleDate !== today ? ` dated ${saleDate} (entered ${today})${reason ? `: ${reason}` : ''}` : ''),
         });
         return bill.saleId;
       }, TX_OPTIONS);
