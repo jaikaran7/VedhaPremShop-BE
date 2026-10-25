@@ -2,13 +2,13 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsIn, IsInt, IsNumber, IsOptional, IsPositive, IsString, IsUUID,
-  Length, Matches, Max, MaxLength, Min, ValidateIf, ValidateNested,
+  Length, Max, MaxLength, Min, ValidateIf, ValidateNested,
 } from 'class-validator';
 import { BagWeightDto } from '../sales/sales.dto';
+import { IsIsoDate } from '../../common/http/is-iso-date';
 
 const money = { maxDecimalPlaces: 2 };
 const EXPENSE_TYPES = ['FREIGHT', 'HAMALI', 'MANDI_TAX', 'COMMISSION', 'OTHER'] as const;
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 export class PurchaseItemDto {
   @ApiPropertyOptional({ description: 'On an edit: the id of the existing line this row replaces. Ignored when creating.' })
@@ -38,8 +38,8 @@ export class CreatePurchaseDto {
   @ApiProperty({ description: "The vendor's own bill number; unique per vendor" }) @IsString() @Length(1, 40) billNumber!: string;
   @ApiProperty() @IsUUID() vendorId!: string;
   @ApiProperty() @IsUUID() productId!: string;
-  @ApiProperty({ example: '2026-10-25' }) @Matches(ISO_DATE) date!: string;
-  @ApiPropertyOptional() @IsOptional() @Matches(ISO_DATE) expectedArrivalDate?: string;
+  @ApiProperty({ example: '2026-10-25' }) @IsIsoDate() date!: string;
+  @ApiPropertyOptional() @IsOptional() @IsIsoDate() expectedArrivalDate?: string;
   @ApiProperty() @IsString() @Length(1, 40) lotNumber!: string;
   /** Echoed by the frontend on a correction. A new bill is always awaiting receipt; receiving is its own step. */
   @ApiPropertyOptional({ enum: ['PENDING_RECEIPT', 'RECEIVED'] }) @IsOptional() @IsIn(['PENDING_RECEIPT', 'RECEIVED']) receiptStatus?: 'PENDING_RECEIPT' | 'RECEIVED';

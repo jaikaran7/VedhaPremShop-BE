@@ -130,8 +130,8 @@ export function settle(input: {
   const balancePaise = input.totalPaise - paidPaise;
   if (balancePaise > 0 && !input.hasCustomer) fail('A counter sale has no credit account. Collect the full amount.');
 
-  const paymentStatus: PaymentStatus = balancePaise === 0 ? 'PAID' : paidPaise === 0 ? 'CREDIT' : 'PARTIAL';
-  const paymentType = paymentStatus !== 'PAID' ? paymentStatus : tenders.length === 1 && carried === 0 ? tenders[0]!.method : 'SPLIT';
+  const paymentStatus = paymentStatusFor(input.totalPaise, paidPaise);
+  const paymentType = paymentTypeFor(paymentStatus, tenders, carried);
   const creditDays = balancePaise > 0 ? Math.max(0, input.creditDays ?? input.defaultCreditDays ?? 0) : null;
   return {
     tenders,
@@ -142,6 +142,13 @@ export function settle(input: {
     creditDays,
     dueDate: creditDays == null ? null : addCalendarDays(input.saleDate, creditDays),
   };
+}
+
+/** Credit and partial bills are labelled by their status; a paid bill by its single method, or SPLIT. */
+function paymentTypeFor(status: PaymentStatus, tenders: { method: PaymentMethod }[], carriedPaise: number): string {
+  if (status !== 'PAID') return status;
+  const [only] = tenders;
+  return tenders.length === 1 && carriedPaise === 0 && only ? only.method : 'SPLIT';
 }
 
 export function paymentStatusFor(totalPaise: number, paidPaise: number): PaymentStatus {

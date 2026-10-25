@@ -46,6 +46,7 @@
     "@types/pg": "^8.23.1",
     "@types/supertest": "^7.2.1",
     "eslint": "^10.13.0",
+    "eslint-plugin-sonarjs": "^4.2.2",
     "jest": "^30.5.2",
     "prisma": "7.10.1",
     "supertest": "^7.3.1",

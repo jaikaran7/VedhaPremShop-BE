@@ -1,11 +1,69 @@
 import { PrismaPg } from '@prisma/adapter-pg';
 import { toDbDate } from '../common/dates';
 import { type CashAccountKind, type CollectionCategory, type CostingExpenseKind, PrismaClient, type PurchaseExpenseType, type QualityGrade, type UserRole } from '../generated/prisma/client';
+import type { Tx } from './prisma.service';
 import { hashPassword } from '../modules/auth/passwords';
 import fixture from './seeds/dev-fixture.json';
 
 const OPENING_DATE = '2026-09-30';
 const LEGACY_EXPENSE_NAMES: Record<string, string> = { FREIGHT: 'Freight', HAMALI: 'Hamali', MANDI_TAX: 'Mandi tax', COMMISSION: 'Commission', OTHER: 'Other' };
+
+interface SeedContext {
+  organizationId: string;
+  productIds: Map<string, string>;
+  vendorIds: Map<string, string>;
+  expenseTypeIds: Map<string, string>;
+  ownerId: string;
+  ownerName: string;
+}
+
+/** Consignments already in the yard when the system starts: RECEIVED, with their stock carried as opening movements by `seedLots`. */
+async function seedPurchases(tx: Tx, { organizationId, productIds, vendorIds, expenseTypeIds, ownerId, ownerName }: SeedContext): Promise<Map<string, string>> {
+  const purchaseIds = new Map<string, string>();
+  for (const p of fixture.purchases) {
+    const gross = p.items.reduce((t, i) => t + i.totalAmount, 0);
+    const expenses = p.expenses.reduce((t, e) => t + e.amount, 0);
+    const purchase = await tx.purchase.create({ data: {
+      organizationId, billNumber: p.billNumber, vendorPartyId: vendorIds.get(p.vendorId)!, productId: productIds.get(p.productId)!,
+      purchaseDate: toDbDate(p.date), lotNumber: p.lotNumber.toUpperCase(), notes: 'notes' in p ? (p.notes as string) : null,
+      grossAmount: gross, totalExpenses: expenses, netAmount: gross + expenses,
+      receiptStatus: 'RECEIVED', receivedAt: new Date(`${p.date}T00:00:00Z`),
+      receivingRecord: { receivedAt: `${p.date}T00:00:00.000Z`, stockPosted: true, expenses: [], groups: [], issues: [] },
+      createdByUserId: ownerId, createdByName: ownerName,
+      items: { create: p.items.map((i, position) => ({ organizationId, position, markCode: i.markCode.toUpperCase(), bags: i.bags, weightKg: i.weightKg, ratePerKg: i.ratePerKg, totalAmount: i.totalAmount })) },
+      expenses: { create: p.expenses.map((e, position) => ({
+        organizationId, position, type: e.type as PurchaseExpenseType, amount: e.amount, description: e.description,
+        expenseTypeId: 'expenseTypeId' in e ? (expenseTypeIds.get(e.expenseTypeId as string) ?? null) : null,
+        expenseTypeName: 'expenseTypeName' in e ? (e.expenseTypeName as string) : LEGACY_EXPENSE_NAMES[e.type] ?? e.type,
+      })) },
+    } });
+    purchaseIds.set(p.billNumber, purchase.id);
+  }
+  return purchaseIds;
+}
+
+async function seedLots(tx: Tx, { organizationId, productIds, vendorIds, ownerId, ownerName }: SeedContext, purchaseIds: Map<string, string>): Promise<void> {
+  for (const l of fixture.lots) {
+    const lot = await tx.lot.create({ data: {
+      organizationId, lotNumber: l.lotNumber.toUpperCase(), productId: productIds.get(l.productId)!, vendorPartyId: vendorIds.get(l.vendorId)!,
+      purchaseId: purchaseIds.get(l.purchaseBillNo) ?? null, purchaseBillNo: l.purchaseBillNo, arrivalDate: toDbDate(l.arrivalDate), notes: l.notes ?? null,
+    } });
+    for (const m of l.marks) {
+      const mark = await tx.lotMark.create({ data: {
+        organizationId, lotId: lot.id, markCode: m.markCode.toUpperCase(), initialBags: m.initialBags, initialWeightKg: m.initialWeightKg,
+        remainingBags: m.remainingBags, remainingWeightKg: m.remainingWeightKg, purchaseRate: m.purchaseRate,
+      } });
+      if (m.remainingBags > 0 || m.remainingWeightKg > 0) {
+        await tx.stockMovement.create({ data: {
+          organizationId, lotMarkId: mark.id, type: 'OPENING_STOCK', bagsDelta: m.remainingBags, weightDeltaKg: m.remainingWeightKg,
+          balanceBagsAfter: m.remainingBags, balanceWeightKgAfter: m.remainingWeightKg, referenceType: 'OPENING',
+          reason: 'Opening stock carried into the system', movementDate: toDbDate(OPENING_DATE),
+          performedByUserId: ownerId, performedByName: ownerName,
+        } });
+      }
+    }
+  }
+}
 
 /**
  * Development data mirroring the frontend's mock seed, so screens look the same against the API.
@@ -72,48 +130,9 @@ export async function seedDevData(db: PrismaClient, password: string): Promise<{
       expenseTypeIds.set(t.key, type.id);
     }
 
-    // Consignments already in the yard when the system starts: RECEIVED, with their stock carried as opening movements below.
-    const purchaseIds = new Map<string, string>();
-    for (const p of fixture.purchases) {
-      const gross = p.items.reduce((t, i) => t + i.totalAmount, 0);
-      const expenses = p.expenses.reduce((t, e) => t + e.amount, 0);
-      const purchase = await tx.purchase.create({ data: {
-        organizationId, billNumber: p.billNumber, vendorPartyId: vendorIds.get(p.vendorId)!, productId: productIds.get(p.productId)!,
-        purchaseDate: toDbDate(p.date), lotNumber: p.lotNumber.toUpperCase(), notes: 'notes' in p ? (p.notes as string) : null,
-        grossAmount: gross, totalExpenses: expenses, netAmount: gross + expenses,
-        receiptStatus: 'RECEIVED', receivedAt: new Date(`${p.date}T00:00:00Z`),
-        receivingRecord: { receivedAt: `${p.date}T00:00:00.000Z`, stockPosted: true, expenses: [], groups: [], issues: [] },
-        createdByUserId: userIds.get(owner.key)!, createdByName: owner.name,
-        items: { create: p.items.map((i, position) => ({ organizationId, position, markCode: i.markCode.toUpperCase(), bags: i.bags, weightKg: i.weightKg, ratePerKg: i.ratePerKg, totalAmount: i.totalAmount })) },
-        expenses: { create: p.expenses.map((e, position) => ({
-          organizationId, position, type: e.type as PurchaseExpenseType, amount: e.amount, description: e.description,
-          expenseTypeId: 'expenseTypeId' in e ? (expenseTypeIds.get(e.expenseTypeId as string) ?? null) : null,
-          expenseTypeName: 'expenseTypeName' in e ? (e.expenseTypeName as string) : LEGACY_EXPENSE_NAMES[e.type] ?? e.type,
-        })) },
-      } });
-      purchaseIds.set(p.billNumber, purchase.id);
-    }
-
-    for (const l of fixture.lots) {
-      const lot = await tx.lot.create({ data: {
-        organizationId, lotNumber: l.lotNumber.toUpperCase(), productId: productIds.get(l.productId)!, vendorPartyId: vendorIds.get(l.vendorId)!,
-        purchaseId: purchaseIds.get(l.purchaseBillNo) ?? null, purchaseBillNo: l.purchaseBillNo, arrivalDate: toDbDate(l.arrivalDate), notes: l.notes ?? null,
-      } });
-      for (const m of l.marks) {
-        const mark = await tx.lotMark.create({ data: {
-          organizationId, lotId: lot.id, markCode: m.markCode.toUpperCase(), initialBags: m.initialBags, initialWeightKg: m.initialWeightKg,
-          remainingBags: m.remainingBags, remainingWeightKg: m.remainingWeightKg, purchaseRate: m.purchaseRate,
-        } });
-        if (m.remainingBags > 0 || m.remainingWeightKg > 0) {
-          await tx.stockMovement.create({ data: {
-            organizationId, lotMarkId: mark.id, type: 'OPENING_STOCK', bagsDelta: m.remainingBags, weightDeltaKg: m.remainingWeightKg,
-            balanceBagsAfter: m.remainingBags, balanceWeightKgAfter: m.remainingWeightKg, referenceType: 'OPENING',
-            reason: 'Opening stock carried into the system', movementDate: toDbDate(OPENING_DATE),
-            performedByUserId: userIds.get(owner.key)!, performedByName: owner.name,
-          } });
-        }
-      }
-    }
+    const seeding: SeedContext = { organizationId, productIds, vendorIds, expenseTypeIds, ownerId: userIds.get(owner.key)!, ownerName: owner.name };
+    const purchaseIds = await seedPurchases(tx, seeding);
+    await seedLots(tx, seeding, purchaseIds);
     return { organizationId };
   }, { maxWait: 20_000, timeout: 120_000 });
 }

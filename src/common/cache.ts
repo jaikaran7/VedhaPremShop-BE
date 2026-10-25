@@ -22,13 +22,16 @@ export class OrgCache {
 
   get<T>(organizationId: string, key: string, ttlMs: number, load: () => Promise<T>): Promise<T> {
     let entries = this.orgs.get(organizationId);
-    if (!entries) this.orgs.set(organizationId, (entries = new Map()));
+    if (!entries) {
+      entries = new Map();
+      this.orgs.set(organizationId, entries);
+    }
     const hit = entries.get(key);
     if (hit && hit.expires > Date.now()) return hit.value as Promise<T>;
     const value = load();
     entries.set(key, { expires: Date.now() + ttlMs, value });
     // A failed load must not be served again.
-    value.catch(() => entries.get(key)?.value === value && entries.delete(key));
+    void value.catch(() => entries.get(key)?.value === value && entries.delete(key));
     return value;
   }
 

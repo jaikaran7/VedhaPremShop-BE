@@ -112,7 +112,11 @@ export class SettingsService {
       if (existing.some((p) => p.name.toLowerCase() === trimmed.toLowerCase())) throw new ConflictException(`${trimmed} already exists`);
       const used = new Set(existing.map((p) => p.code));
       let code = base;
-      for (let suffix = 2; used.has(code); suffix += 1) code = `${base}_${suffix}`;
+      let suffix = 2;
+      while (used.has(code)) {
+        code = `${base}_${suffix}`;
+        suffix += 1;
+      }
       const row = await tx.product.create({ data: { organizationId: actor.organizationId, name: trimmed, code } });
       await audit(tx, actor, { action: 'CREATE_PRODUCT', entity: 'PRODUCT', entityId: row.id, details: `Added product ${trimmed}` });
       return productView(row);

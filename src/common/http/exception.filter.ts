@@ -25,7 +25,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
       message = status === HttpStatus.NOT_FOUND ? 'Not found' : 'Conflicts with existing data. Refresh and try again.';
     }
 
-    if (status >= 500) this.logger.error({ requestId, path: request.url, err: exception instanceof Error ? exception.stack : exception });
+    if (status >= 500) this.logger.error({ requestId, path: request.path, err: exception instanceof Error ? exception.stack : exception });
+    else if (status >= 400) this.logger.warn(JSON.stringify({ requestId, method: request.method, path: request.path, status, message }));
     response.status(status).json({ statusCode: status, error: HttpStatus[status] ?? 'Error', message, requestId });
   }
 }

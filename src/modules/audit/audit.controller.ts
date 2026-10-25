@@ -3,12 +3,15 @@ import { ApiTags } from '@nestjs/swagger';
 import { type Actor, CurrentActor, Management } from '../../common/auth/actor';
 import { ListQueryDto } from '../../common/http/list-query.dto';
 import { PrismaService } from '../../database/prisma.service';
+import { ApiEndpoint, ApiStandardErrors } from '../../common/http/swagger';
 
 @ApiTags('audit')
+@ApiStandardErrors()
 @Controller('audit')
 export class AuditController {
   constructor(private readonly db: PrismaService) {}
 
+  @ApiEndpoint('List the audit trail', 'Every recorded business action, newest first. Owner and Manager. Use limit and offset to page.')
   @Management()
   @Get()
   async list(@CurrentActor() actor: Actor, @Query() query: ListQueryDto) {

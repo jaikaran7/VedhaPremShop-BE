@@ -1,8 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, IsNumber, IsOptional, IsPositive, IsString, IsUUID, Length, Matches, Max, MaxLength, Min } from 'class-validator';
+import { IsIn, IsNumber, IsOptional, IsPositive, IsString, IsUUID, Length, Max, MaxLength, Min } from 'class-validator';
 import { ListQueryDto } from '../../common/http/list-query.dto';
 import { PAYMENT_METHODS } from '../sales/sales.dto';
 import type { PaymentMethod } from '../sales/sales.calc';
+import { IsIsoDate } from '../../common/http/is-iso-date';
 
 export const COLLECTION_CATEGORIES = ['ONION_SALES', 'AMALI', 'OTHER_PRODUCT', 'MARKET_FEE', 'OTHER'] as const;
 export type CollectionCategoryId = (typeof COLLECTION_CATEGORIES)[number];
@@ -16,7 +17,7 @@ export class CreateExpenseCategoryDto {
 export class RecordExpenseDto {
   @ApiProperty() @IsUUID() categoryId!: string;
   @ApiProperty() @IsNumber({ maxDecimalPlaces: 2 }) @IsPositive() @Max(100_000_000) amount!: number;
-  @ApiProperty({ example: '2026-10-25' }) @Matches(/^\d{4}-\d{2}-\d{2}$/) date!: string;
+  @ApiProperty({ example: '2026-10-25' }) @IsIsoDate() date!: string;
   @ApiProperty({ enum: PAYMENT_METHODS }) @IsIn(PAYMENT_METHODS) paymentMethod!: PaymentMethod;
   @ApiProperty() @IsUUID() accountId!: string;
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(300) reference?: string;
@@ -31,9 +32,9 @@ export class ExpensesQueryDto extends ListQueryDto {}
 export class SetOpeningBalanceDto {
   @ApiProperty({ description: 'Real money in this account at the start of `openingDate`.' })
   @IsNumber({ maxDecimalPlaces: 2 }) @Min(-100_000_000) @Max(100_000_000) openingBalance!: number;
-  @ApiProperty({ example: '2026-10-26' }) @Matches(/^\d{4}-\d{2}-\d{2}$/) openingDate!: string;
+  @ApiProperty({ example: '2026-10-26' }) @IsIsoDate() openingDate!: string;
 }
 
 export class DayQueryDto {
-  @ApiProperty({ example: '2026-10-26' }) @Matches(/^\d{4}-\d{2}-\d{2}$/) date!: string;
+  @ApiProperty({ example: '2026-10-26' }) @IsIsoDate() date!: string;
 }

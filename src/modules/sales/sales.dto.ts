@@ -2,10 +2,11 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize, ArrayMinSize, IsArray, IsIn, IsInt, IsNumber, IsOptional, IsPositive, IsString, IsUUID,
-  Length, Matches, Max, MaxLength, Min, ValidateIf, ValidateNested,
+  Length, Max, MaxLength, Min, ValidateIf, ValidateNested,
 } from 'class-validator';
 import { ListQueryDto } from '../../common/http/list-query.dto';
 import type { PaymentMethod } from './sales.calc';
+import { IsIsoDate } from '../../common/http/is-iso-date';
 
 export const PAYMENT_METHODS: PaymentMethod[] = ['CASH', 'UPI', 'QR', 'BANK_TRANSFER', 'CARD', 'OTHER', 'CHEQUE'];
 
@@ -52,7 +53,7 @@ export class CreateSaleDto {
   @ApiPropertyOptional({ description: 'Optional GST/tax as a rupee amount, added to the total.' })
   @IsOptional() @IsNumber({ maxDecimalPlaces: 2 }) @Min(0) @Max(100_000_000) taxAmount?: number;
   @ApiPropertyOptional({ description: 'Bill date (YYYY-MM-DD). Any day other than today needs Owner approval.', example: '2026-10-24' })
-  @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) date?: string;
+  @IsOptional() @IsIsoDate() date?: string;
   @ApiPropertyOptional({ description: 'Why the bill is dated another day' })
   @IsOptional() @IsString() @MaxLength(500) dateReason?: string;
 }
@@ -75,8 +76,8 @@ export class ProcessApprovalDto {
 }
 
 export class SalesQueryDto extends ListQueryDto {
-  @ApiPropertyOptional({ example: '2026-10-01' }) @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) from?: string;
-  @ApiPropertyOptional({ example: '2026-10-31' }) @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) to?: string;
+  @ApiPropertyOptional({ example: '2026-10-01' }) @IsOptional() @IsIsoDate() from?: string;
+  @ApiPropertyOptional({ example: '2026-10-31' }) @IsOptional() @IsIsoDate() to?: string;
 }
 
 export const IDEMPOTENCY_KEY = /^[\w-]{8,100}$/;

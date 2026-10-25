@@ -8,6 +8,7 @@ import { PurchasesService } from '../purchases/purchases.service';
 import { SalesService } from '../sales/sales.service';
 import { VendorsService } from '../vendors/vendors.service';
 import { ReportsService } from './reports.service';
+import { ApiEndpoint, ApiStandardErrors } from '../../common/http/swagger';
 
 // shortcut: the frontend computes every report from this snapshot, so sales, payments and purchases are capped at the
 // newest 5000 each. Move the report maths into SQL before real volumes approach that.
@@ -15,6 +16,7 @@ const SNAPSHOT_ROWS = 5000;
 
 /** Reports show cost and profit, so they are Owner and Manager only (frontend `viewProfit`). */
 @ApiTags('reports')
+@ApiStandardErrors()
 @Management()
 @Controller('reports')
 export class ReportsController {
@@ -29,8 +31,10 @@ export class ReportsController {
   ) {}
 
   /** Lot breakdown: per lot and mark, what arrived, sold, remains, the cost and profit, and anything that needs review. */
+  @ApiEndpoint('Lot breakdown', 'Per lot and mark: what arrived, sold and remains, landed cost, cost of goods, profit and anything that needs review. Owner and Manager.')
   @Get('differential') differential(@CurrentActor() a: Actor) { return this.reports.differential(a); }
 
+  @ApiEndpoint('Reports snapshot', 'Sales, payments, customers, vendors, lots and purchases in one call, in a fixed number of queries. Owner and Manager.')
   @Get()
   async snapshot(@CurrentActor() a: Actor) {
     const [sales, payments, customers, vendors, lots, purchases] = await Promise.all([

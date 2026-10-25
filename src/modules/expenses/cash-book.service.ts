@@ -3,7 +3,7 @@ import { audit } from '../../common/audit';
 import type { Actor } from '../../common/auth/actor';
 import { OrgCache } from '../../common/cache';
 import { businessTime, fromDbDate, toDbDate } from '../../common/dates';
-import { fromPaise, toPaise } from '../../common/money';
+import { formatRupees, fromPaise, toPaise } from '../../common/money';
 import { PrismaService, TX_OPTIONS } from '../../database/prisma.service';
 import type { CashAccount, CashAccountKind } from '../../generated/prisma/client';
 import type { SetOpeningBalanceDto } from './expenses.dto';
@@ -52,7 +52,7 @@ export class CashBookService {
       const row = await tx.cashAccount.update({ where: { id }, data: { openingBalance: dto.openingBalance, openingDate: toDbDate(dto.openingDate) } });
       await audit(tx, actor, {
         action: 'SET_ACCOUNT_OPENING', entity: 'ACCOUNT', entityId: id,
-        details: `${found.name} opening balance set to ₹${dto.openingBalance.toLocaleString('en-IN')} from ${dto.openingDate} (was ₹${Number(found.openingBalance).toLocaleString('en-IN')} from ${fromDbDate(found.openingDate)})`,
+        details: `${found.name} opening balance set to ${formatRupees(dto.openingBalance)} from ${dto.openingDate} (was ${formatRupees(Number(found.openingBalance))} from ${fromDbDate(found.openingDate)})`,
       });
       return { id: row.id, name: row.name, kind: row.kind, openingBalance: Number(row.openingBalance), openingDate: fromDbDate(row.openingDate) };
     }, TX_OPTIONS);

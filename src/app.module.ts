@@ -1,10 +1,11 @@
 import { type DynamicModule, Module } from '@nestjs/common';
-import { APP_FILTER, APP_GUARD } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AuthGuard } from './common/auth/auth.guard';
 import { CacheModule } from './common/cache';
 import { AllExceptionsFilter } from './common/http/exception.filter';
+import { RequestLogInterceptor } from './common/http/request-log.interceptor';
 import { ENV, type Env } from './config/env';
 import { DbModule } from './database/prisma.service';
 import { HealthController } from './health/health.controller';
@@ -41,6 +42,7 @@ export class AppModule {
         { provide: APP_GUARD, useClass: ThrottlerGuard },
         { provide: APP_GUARD, useClass: AuthGuard },
         { provide: APP_FILTER, useClass: AllExceptionsFilter },
+        { provide: APP_INTERCEPTOR, useClass: RequestLogInterceptor },
       ],
       exports: [ENV],
     };

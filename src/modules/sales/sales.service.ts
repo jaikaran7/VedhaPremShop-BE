@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { audit } from '../../common/audit';
 import type { Actor } from '../../common/auth/actor';
 import { businessDate, businessTime, daysBetween, fromDbDate } from '../../common/dates';
-import { fromPaise, toPaise } from '../../common/money';
+import { formatRupees, fromPaise, toPaise } from '../../common/money';
 import { isUniqueViolation } from '../../common/pg-error';
 import { PrismaService, TX_OPTIONS, type Tx } from '../../database/prisma.service';
 import type { Prisma } from '../../generated/prisma/client';
@@ -41,11 +41,9 @@ export class SalesService {
         const customer = await loadCustomer(tx, actor, dto.customerId);
         const bill = await insertBill(tx, actor, org, dto, { customer, saleDate, status: 'CONFIRMED', idempotencyKey });
         await postBillFinancials(tx, actor, org, { ...bill, saleDate, customer, description: await describe(tx, bill.saleId) });
-        const reason = dto.dateReason?.trim();
         await audit(tx, actor, {
           action: 'CREATE_SALE', entity: 'SALE', entityId: bill.saleId,
-          details: `Sale ${bill.billNumber} for ${customer?.name ?? COUNTER_SALE}: ₹${fromPaise(bill.totalPaise).toLocaleString('en-IN')}`
-            + (saleDate !== today ? ` dated ${saleDate} (entered ${today})${reason ? `: ${reason}` : ''}` : ''),
+          details: `Sale ${bill.billNumber} for ${customer?.name ?? COUNTER_SALE}: ${formatRupees(fromPaise(bill.totalPaise))}${datedNote(saleDate, today, dto.dateReason)}`,
         });
         return bill.saleId;
       }, TX_OPTIONS);
@@ -69,7 +67,8 @@ export class SalesService {
   /** Edit = cancel and rebill in one step. Owner applies directly; anyone else files a request. */
   async requestRebill(actor: Actor, saleId: string, dto: CreateSaleDto, reason: string): Promise<ChangeResult> {
     if (actor.role !== 'OWNER') {
-      const { date: _date, dateReason: _reason, ...bill } = dto;
+      // The edited bill keeps the original bill's date, so the request carries no date of its own.
+      const bill = { ...dto, date: undefined, dateReason: undefined };
       return this.fileRequest(actor, saleId, 'SALE_REBILL', reason, bill as unknown as Prisma.InputJsonValue);
     }
     const newId = await this.db.$transaction((tx) => this.executeRebill(tx, actor, saleId, dto, reason), TX_OPTIONS);
@@ -107,7 +106,7 @@ export class SalesService {
     await tx.sale.update({ where: { id: saleId }, data: { cancelReason: `Rebilled as ${bill.billNumber}: ${reason}` } });
     await audit(tx, actor, {
       action: 'REBILL_SALE', entity: 'SALE', entityId: bill.saleId, approver,
-      details: `${old.billNumber} replaced by ${bill.billNumber} (₹${fromPaise(bill.totalPaise).toLocaleString('en-IN')}): ${reason}`,
+      details: `${old.billNumber} replaced by ${bill.billNumber} (${formatRupees(fromPaise(bill.totalPaise))}): ${reason}`,
     });
     return bill.saleId;
   }
@@ -242,6 +241,14 @@ export class SalesService {
     }, TX_OPTIONS);
     return { status: 'PENDING_APPROVAL', approvalId };
   }
+}
+
+/** " dated 2026-10-24 (entered 2026-10-26): reason" for a bill on another day; nothing for today's bills. */
+function datedNote(saleDate: string, today: string, reason?: string): string {
+  if (saleDate === today) return '';
+  const why = reason?.trim();
+  const suffix = why ? `: ${why}` : '';
+  return ` dated ${saleDate} (entered ${today})${suffix}`;
 }
 
 function checkedSaleDate(requested: string | undefined, today: string): string {

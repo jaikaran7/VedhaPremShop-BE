@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { audit } from '../../common/audit';
 import type { Actor } from '../../common/auth/actor';
-import { PrismaService, TX_OPTIONS } from '../../database/prisma.service';
+import { PrismaService, TX_OPTIONS, type Tx } from '../../database/prisma.service';
 import { hashPassword } from '../auth/passwords';
 import type { CreateUserDto, UpdateUserDto } from './users.dto';
 import { toUserView, type UserView } from './user.view';
@@ -38,15 +38,7 @@ export class UsersService {
         SELECT role FROM memberships WHERE user_id = ${userId}::uuid AND organization_id = ${actor.organizationId}::uuid FOR UPDATE`;
       const membership = locked[0];
       if (!membership) throw new NotFoundException('User not found');
-      if (userId === actor.userId && (dto.active === false || (dto.role && dto.role !== membership.role))) {
-        throw new BadRequestException('You cannot deactivate yourself or change your own role');
-      }
-      if (membership.role === 'OWNER' && ((dto.role && dto.role !== 'OWNER') || dto.active === false)) {
-        const others = await tx.membership.count({
-          where: { organizationId: actor.organizationId, role: 'OWNER', userId: { not: userId }, user: { active: true } },
-        });
-        if (others === 0) throw new BadRequestException('The organization needs at least one active owner');
-      }
+      await this.assertUpdateAllowed(tx, actor, userId, dto, membership.role);
 
       const user = await tx.user.update({
         where: { id: userId },
@@ -69,5 +61,19 @@ export class UsersService {
       await audit(tx, actor, { action: 'UPDATE_USER', entity: 'USER', entityId: userId, details: `Updated ${user.name}: ${changed.join(', ')}` });
       return toUserView(user, role);
     }, TX_OPTIONS);
+  }
+
+  /** Nobody may lock themselves out, and the organization always keeps one active owner. */
+  private async assertUpdateAllowed(tx: Tx, actor: Actor, userId: string, dto: UpdateUserDto, currentRole: string): Promise<void> {
+    const losesAccess = dto.active === false;
+    const changesRole = dto.role !== undefined && dto.role !== currentRole;
+    if (userId === actor.userId && (losesAccess || changesRole)) {
+      throw new BadRequestException('You cannot deactivate yourself or change your own role');
+    }
+    if (currentRole !== 'OWNER' || !(losesAccess || changesRole)) return;
+    const others = await tx.membership.count({
+      where: { organizationId: actor.organizationId, role: 'OWNER', userId: { not: userId }, user: { active: true } },
+    });
+    if (others === 0) throw new BadRequestException('The organization needs at least one active owner');
   }
 }

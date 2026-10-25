@@ -41,6 +41,11 @@ export function settleBills(openingPaise: number, bills: LedgerBill[], paidPaise
     const paid = Math.min(bill.netPaise, credit);
     credit -= paid;
     const balancePaise = bill.netPaise - paid;
-    return { id: bill.id, paidPaise: paid, balancePaise, status: balancePaise === 0 ? 'PAID' : paid === 0 ? 'UNPAID' : 'PARTIAL' };
+    return { id: bill.id, paidPaise: paid, balancePaise, status: billStatus(balancePaise, paid) };
   });
+}
+
+function billStatus(balancePaise: number, paidPaise: number): BillSettlement['status'] {
+  if (balancePaise === 0) return 'PAID';
+  return paidPaise === 0 ? 'UNPAID' : 'PARTIAL';
 }

@@ -3,7 +3,7 @@ import { audit } from '../../common/audit';
 import { type Actor, isOwner, isManagement } from '../../common/auth/actor';
 import { OrgCache } from '../../common/cache';
 import { fromDbDate, toDbDate } from '../../common/dates';
-import { fromPaise, toPaise } from '../../common/money';
+import { formatRupees, fromPaise, toPaise } from '../../common/money';
 import { PrismaService, TX_OPTIONS } from '../../database/prisma.service';
 import type { CashAccount, Expense, ExpenseCategory } from '../../generated/prisma/client';
 import type { CreateExpenseCategoryDto, RecordExpenseDto } from './expenses.dto';
@@ -118,9 +118,10 @@ export class ExpensesService {
         recordedByUserId: actor.userId,
         recordedByName: actor.name,
       } });
+      const payee = vendorName ? ` to ${vendorName}` : '';
       await audit(tx, actor, {
         action: 'RECORD_EXPENSE', entity: 'EXPENSE', entityId: expense.id,
-        details: `Expense ${category.name} of ₹${fromPaise(amountPaise).toLocaleString('en-IN')} paid from ${account.name}${vendorName ? ` to ${vendorName}` : ''}`,
+        details: `Expense ${category.name} of ${formatRupees(fromPaise(amountPaise))} paid from ${account.name}${payee}`,
       });
       return expense.id;
     }, TX_OPTIONS);

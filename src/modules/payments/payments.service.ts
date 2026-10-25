@@ -2,7 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { audit } from '../../common/audit';
 import type { Actor } from '../../common/auth/actor';
 import { businessDate, businessTime, fromDbDate, toDbDate } from '../../common/dates';
-import { fromPaise, toPaise } from '../../common/money';
+import { formatRupees, fromPaise, toPaise } from '../../common/money';
 import { isUniqueViolation } from '../../common/pg-error';
 import { nextSequence } from '../../common/sequences';
 import { PrismaService, TX_OPTIONS, type Tx } from '../../database/prisma.service';
@@ -61,10 +61,11 @@ export class PaymentsService {
       recordedByName: actor.name,
       idempotencyKey: idempotencyKey ?? null,
     } });
+    const referenceNote = reference ? ` (${reference})` : '';
     await tx.customerLedgerEntry.create({ data: {
       organizationId: actor.organizationId, customerPartyId: party.id, entryDate: toDbDate(date), type: 'PAYMENT',
       referenceNo: receiptNumber, paymentId: payment.id, credit: fromPaise(amountPaise),
-      description: `Payment received via ${dto.paymentMethod}${reference ? ` (${reference})` : ''}`,
+      description: `Payment received via ${dto.paymentMethod}${referenceNote}`,
     } });
     const named = reference
       ? await tx.sale.findFirst({ where: { organizationId: actor.organizationId, customerPartyId: party.id, billNumber: reference }, select: { id: true } })
@@ -74,8 +75,8 @@ export class PaymentsService {
     const advance = Math.max(0, amountPaise - Math.max(0, beforePaise));
     await audit(tx, actor, {
       action: 'RECORD_PAYMENT', entity: 'PAYMENT', entityId: payment.id,
-      details: `Payment ${receiptNumber} of ₹${dto.amount.toLocaleString('en-IN')} from ${party.name}`
-        + (advance > 0 ? `; ₹${fromPaise(advance).toLocaleString('en-IN')} kept as advance` : ''),
+      details: `Payment ${receiptNumber} of ${formatRupees(dto.amount)} from ${party.name}`
+        + (advance > 0 ? `; ${formatRupees(fromPaise(advance))} kept as advance` : ''),
     });
     return payment.id;
   }

@@ -59,6 +59,7 @@ from session 2 not re-measured); anything against production.
 | Lot breakdown on the server; stock movement filters + `X-Total-Count` | Verified complete | `reports/calc/*.spec.ts` (frontend's tests), `test/lot-reports.e2e.spec.ts` |
 | Caching (per organization, in memory, no Redis) | Verified complete | `common/cache.ts`; read-after-write tests |
 | **No N+1** | Verified | `test/lot-reports.e2e.spec.ts` (11 endpoints), `vendors`, `cash-book` specs: query count identical before and after growing the data |
+| Backend standards (CLAUDE.md): Sonar lint clean, date validation, request logging, Swagger on all endpoints | Verified | `eslint.config.mjs`, `common/http/{is-iso-date,request-log.interceptor,swagger}.ts`, `test/standards.e2e.spec.ts` |
 | Not browser-tested against the real API | — | Only mock mode was clicked through; the real-API path is covered by the contract script and e2e tests |
 
-Totals: backend **148** tests (jest, real Postgres), frontend **54** (node:test); typecheck, lint, build clean; Neon dev migrated (5 migrations).
+Totals: backend **165** tests (jest, real Postgres), frontend **54** (node:test); typecheck, lint, build clean; Neon dev migrated (5 migrations).

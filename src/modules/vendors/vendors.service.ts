@@ -2,7 +2,7 @@ import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/commo
 import { audit } from '../../common/audit';
 import { type Actor, isManagement } from '../../common/auth/actor';
 import { fromDbDate } from '../../common/dates';
-import { fromPaise, toPaise } from '../../common/money';
+import { formatRupees, fromPaise, toPaise } from '../../common/money';
 import { nextSequence, partyCode } from '../../common/sequences';
 import { PrismaService, TX_OPTIONS } from '../../database/prisma.service';
 import { vendorTotals } from './payables';
@@ -20,6 +20,12 @@ export function vendorMoney(openingPaise: number, billedPaise: number, paidPaise
     advanceAmount: fromPaise(position.advancePaise),
     payableAmount: fromPaise(position.payablePaise),
   };
+}
+
+/** Audit text for a vendor update; a change of the opening balance names the old and the new amount. */
+function updateDetails(before: { name: string; openingBalance?: number }, openingBalance?: number): string {
+  if (openingBalance === undefined) return `Updated vendor details for ${before.name}`;
+  return `Opening balance for ${before.name} set to ${formatRupees(openingBalance)} (was ${formatRupees(before.openingBalance ?? 0)})`;
 }
 
 @Injectable()
@@ -114,7 +120,7 @@ export class VendorsService {
       await tx.vendor.create({ data: { partyId: party.id, organizationId: actor.organizationId, code, status: dto.status ?? 'ACTIVE', openingBalance: dto.openingBalance ?? 0 } });
       await audit(tx, actor, {
         action: 'CREATE_VENDOR', entity: 'VENDOR', entityId: party.id,
-        details: `Created vendor ${party.name} (${code})` + (dto.openingBalance ? ` with an opening balance of ₹${dto.openingBalance.toLocaleString('en-IN')}` : ''),
+        details: `Created vendor ${party.name} (${code})` + (dto.openingBalance ? ` with an opening balance of ${formatRupees(dto.openingBalance)}` : ''),
       });
       return party.id;
     }, TX_OPTIONS);
@@ -136,10 +142,8 @@ export class VendorsService {
       const vendorPatch = { ...(dto.status && { status: dto.status }), ...(dto.openingBalance !== undefined && { openingBalance: dto.openingBalance }) };
       if (Object.keys(vendorPatch).length) await tx.vendor.update({ where: { partyId: id }, data: vendorPatch });
       await audit(tx, actor, {
-        action: dto.openingBalance !== undefined ? 'UPDATE_VENDOR_OPENING' : 'UPDATE_VENDOR', entity: 'VENDOR', entityId: id,
-        details: dto.openingBalance !== undefined
-          ? `Opening balance for ${before.name} set to ₹${dto.openingBalance.toLocaleString('en-IN')} (was ₹${(('openingBalance' in before ? before.openingBalance : 0) ?? 0).toLocaleString('en-IN')})`
-          : `Updated vendor details for ${before.name}`,
+        action: dto.openingBalance === undefined ? 'UPDATE_VENDOR' : 'UPDATE_VENDOR_OPENING', entity: 'VENDOR', entityId: id,
+        details: updateDetails(before, dto.openingBalance),
       });
     }, TX_OPTIONS);
     return this.get(actor, id);

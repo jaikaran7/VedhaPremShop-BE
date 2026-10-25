@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException, 
 import { audit } from '../../common/audit';
 import type { Actor } from '../../common/auth/actor';
 import { businessDate, fromDbDate, toDbDate } from '../../common/dates';
-import { fromPaise, lineAmountPaise, toGrams, toPaise } from '../../common/money';
+import { formatRupees, fromPaise, lineAmountPaise, toGrams, toPaise } from '../../common/money';
 import { PrismaService, TX_OPTIONS, type Tx } from '../../database/prisma.service';
 import { Prisma } from '../../generated/prisma/client';
 import { applyStockChange, orgTimezone } from '../inventory/stock-ledger';
@@ -131,7 +131,7 @@ export class PurchasesService {
       } });
       await audit(tx, actor, {
         action: 'CREATE_PURCHASE', entity: 'PURCHASE', entityId: purchase.id,
-        details: `Vendor bill ${bill.billNumber} saved for ${purchase.lotNumber}: ₹${fromPaise(bill.grossPaise + bill.expensePaise).toLocaleString('en-IN')}. Awaiting physical receipt.`,
+        details: `Vendor bill ${bill.billNumber} saved for ${purchase.lotNumber}: ${formatRupees(fromPaise(bill.grossPaise + bill.expensePaise))}. Awaiting physical receipt.`,
       });
       return purchase.id;
     }, TX_OPTIONS);

@@ -40,7 +40,8 @@ export async function startHarness(overrides: Partial<Env> = {}): Promise<Harnes
       tokens.clear();
       const tables = await db.$queryRaw<{ name: string }[]>`
         SELECT tablename AS name FROM pg_tables WHERE schemaname = 'public' AND tablename <> '_prisma_migrations'`;
-      await db.$executeRawUnsafe(`TRUNCATE ${tables.map((t) => `"${t.name}"`).join(', ')} CASCADE`);
+      const quoted = tables.map((t) => `"${t.name}"`).join(', ');
+      await db.$executeRawUnsafe(`TRUNCATE ${quoted} CASCADE`);
       await seedDevData(db, PASSWORD);
     },
     token: async (username) => {

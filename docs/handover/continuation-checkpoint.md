@@ -11,6 +11,11 @@ Read this first. It links to the other handover documents instead of repeating t
   bills; optional GST on sale bills; cash book with owner-set openings and day-to-day carry-forward; staff expenses incl. past dates; the lot
   breakdown report computed on the server; stock movement filters; per-organization cache; query-count (no N+1) tests.
   Backend 148 tests, frontend 54, lint/typecheck/build clean, Neon **dev** migrated (5 migrations).
+- **Coding standards (session 6):** `VedhaPremShop-BE/CLAUDE.md` holds the owner's mandatory backend standards (SOLID, Sonar rules, validation,
+  logging, Swagger, N+1) plus how this project already does each. `npm run lint` now includes `eslint-plugin-sonarjs` and is clean; the verbatim
+  frontend port in `src/modules/reports/calc/**` and the supertest-based tests have documented lint overrides in `eslint.config.mjs`. Added:
+  `@IsIsoDate()` (real calendar dates), `RequestLogInterceptor` (INFO per write), 4xx WARN logs, `@ApiEndpoint`/`@ApiStandardErrors` on every
+  endpoint (a test fails if one is undocumented). Backend now **165** tests. Finish every task with `npm run typecheck && npm run lint && npm test && npm run build`.
 - **Committed locally, not pushed.** Run `git log` in both repos; commit anything new first.
 - **Never touched:** production (`ep-round-bar`).
 - **Not clicked through against the real API in a browser:** only mock mode was driven in a browser (vendor payment/advance/statement, bill

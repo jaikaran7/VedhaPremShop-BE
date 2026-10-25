@@ -86,9 +86,11 @@ export class ApprovalsService {
       await tx.approval.update({ where: { id }, data: {
         status: action === 'APPROVE' ? 'APPROVED' : 'REJECTED', reviewedByName: actor.name, reviewedAt: new Date(), reviewNotes: notes?.trim() || null,
       } });
+      const approved = action === 'APPROVE';
+      const noteSuffix = notes ? `: ${notes}` : '';
       await audit(tx, actor, {
-        action: action === 'APPROVE' ? 'APPROVAL_ACCEPTED' : 'APPROVAL_REJECTED', entity: 'SALE', entityId: pending.saleId,
-        details: `${action === 'APPROVE' ? 'Approved' : 'Rejected'} ${TYPE_LABEL[pending.type].toLowerCase()} for ${pending.referenceNo}${notes ? `: ${notes}` : ''}`,
+        action: approved ? 'APPROVAL_ACCEPTED' : 'APPROVAL_REJECTED', entity: 'SALE', entityId: pending.saleId,
+        details: `${approved ? 'Approved' : 'Rejected'} ${TYPE_LABEL[pending.type].toLowerCase()} for ${pending.referenceNo}${noteSuffix}`,
         approver: actor.name,
       });
     }, TX_OPTIONS);

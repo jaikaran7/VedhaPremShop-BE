@@ -15,3 +15,6 @@ export function hasAtMostDecimals(value: number, decimals: number): boolean {
   const scaled = value * 10 ** decimals;
   return Math.abs(scaled - Math.round(scaled)) < 1e-6;
 }
+
+/** Rupees in Indian digit grouping with the symbol, e.g. "₹1,23,456", for audit and log text. */
+export const formatRupees = (rupees: number): string => `₹${rupees.toLocaleString('en-IN')}`;
