@@ -1,15 +1,17 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { audit } from '../../common/audit';
 import type { Actor } from '../../common/auth/actor';
-import { businessDate, businessTime, daysBetween, fromDbDate } from '../../common/dates';
+import { businessDate, businessTime, daysBetween, fromDbDate, toDbDate } from '../../common/dates';
 import { formatRupees, fromPaise, toPaise } from '../../common/money';
 import { isUniqueViolation } from '../../common/pg-error';
 import { PrismaService, TX_OPTIONS, type Tx } from '../../database/prisma.service';
 import type { Prisma } from '../../generated/prisma/client';
 import { settleCustomer } from '../payments/receivables';
-import { cancelBill, COUNTER_SALE, insertBill, loadCustomer, postBillFinancials } from './billing';
-import { paymentStatusFor } from './sales.calc';
+import { cancelBill, COUNTER_SALE, insertBill, loadCustomer, postBillFinancials, type BillCustomer } from './billing';
+import { paymentStatusFor, priceBill } from './sales.calc';
+import { sameSaleLines, summarizeExistingSale } from './sale-match';
 import type { CreateSaleDto, SalesQueryDto } from './sales.dto';
+import type { Organization } from '../../generated/prisma/client';
 
 /** How far a bill date may move from today. A bill on another day posts at once; it is recorded in the audit trail. */
 export const MAX_BACKDATE_DAYS = 365;
@@ -39,6 +41,7 @@ export class SalesService {
         const today = businessDate(org.timezone);
         const saleDate = checkedSaleDate(dto.date, today);
         const customer = await loadCustomer(tx, actor, dto.customerId);
+        await this.rejectPossibleDuplicate(tx, actor, dto, { customer, saleDate, org });
         const bill = await insertBill(tx, actor, org, dto, { customer, saleDate, status: 'CONFIRMED', idempotencyKey });
         await postBillFinancials(tx, actor, org, { ...bill, saleDate, customer, description: await describe(tx, bill.saleId) });
         await audit(tx, actor, {
@@ -211,6 +214,46 @@ export class SalesService {
         ...(sale.cancelReason && { cancelReason: sale.cancelReason }),
         createdAt: sale.createdAt.toISOString(),
       };
+    });
+  }
+
+  /** Same customer, same day, same lines and same rupee total needs a second click so a double-save does not post twice. */
+  private async rejectPossibleDuplicate(
+    tx: Tx,
+    actor: Actor,
+    dto: CreateSaleDto,
+    opts: { customer: BillCustomer | null; saleDate: string; org: Organization },
+  ): Promise<void> {
+    if (dto.confirmDuplicateSale) return;
+    const priced = priceBill(dto.items, {
+      amaliPerBag: Number(opts.org.amaliPerBag),
+      marketFeePerBag: Number(opts.org.marketFeePerBag),
+      amaliEnabled: opts.org.amaliEnabled,
+      marketFeeEnabled: opts.org.marketFeeEnabled,
+    }, { percent: dto.taxPercent, amount: dto.taxAmount });
+    const matches = await tx.sale.findMany({
+      where: {
+        organizationId: actor.organizationId,
+        status: 'CONFIRMED',
+        saleDate: toDbDate(opts.saleDate),
+        customerPartyId: opts.customer?.partyId ?? null,
+        totalAmount: fromPaise(priced.totalPaise),
+      },
+      include: { items: { select: { lotNumber: true, markCode: true, bags: true, weightKg: true, ratePerKg: true } } },
+      orderBy: { createdAt: 'asc' },
+    });
+    const match = matches.find((sale) => sameSaleLines(dto.items, sale.items.map((line) => ({
+      lotNumber: line.lotNumber,
+      markCode: line.markCode,
+      bags: line.bags,
+      weightKg: Number(line.weightKg),
+      ratePerKg: Number(line.ratePerKg),
+    }))));
+    if (!match) return;
+    throw new ConflictException({
+      message: `The same bill was already saved for this customer today as ${match.billNumber}. Confirm if this is a second order, or cancel if it was a duplicate.`,
+      code: 'POSSIBLE_DUPLICATE_SALE',
+      existingSale: summarizeExistingSale(match),
     });
   }
 

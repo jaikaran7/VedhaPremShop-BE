@@ -34,6 +34,7 @@ const sale = (over: Record<string, unknown> = {}) => ({
   items: [{ lotNumber: 'LOT AP', markCode: 'AA', ratePerKg: 69, bagWeights: bags(50.5, 50, 50.5) }],
   tenders: [],
   creditDays: 7,
+  confirmDuplicateSale: true,
   ...over,
 });
 // 151 kg × ₹69 = ₹10,419; 3 bags × (₹20 Amali + ₹10 market fee) = ₹90 → ₹10,509
@@ -139,6 +140,21 @@ describe('stock and price guards', () => {
     await h.http().post('/api/v1/sales').set(cashier).send(sale({ items: [{ lotNumber: 'LOT GL', markCode: 'BOLD', ratePerKg: 90, bagWeights: bags(50) }] })).expect(422);
     await h.http().post('/api/v1/sales').set(cashier).send(sale({ items: [{ lotNumber: 'LOT AP', markCode: 'AA', ratePerKg: 69, bagWeights: bags(-5) }] })).expect(400);
     await h.http().post('/api/v1/sales').set(cashier).send(sale({ items: [{ lotNumber: 'LOT AP', markCode: 'AA', ratePerKg: 69, bagWeights: bags(50.1234) }] })).expect(400);
+  });
+
+  it('asks before posting the same customer, items and total again on the same day', async () => {
+    const first = await h.http().post('/api/v1/sales').set(cashier).send(sale({ confirmDuplicateSale: false })).expect(201);
+    const again = await h.http().post('/api/v1/sales').set(cashier).send(sale({ confirmDuplicateSale: false })).expect(409);
+    expect(again.body.code).toBe('POSSIBLE_DUPLICATE_SALE');
+    expect(again.body.existingSale).toMatchObject({
+      id: first.body.id,
+      billNumber: first.body.billNumber,
+      customerName: first.body.customerName,
+      totalAmount: TOTAL,
+    });
+    const second = await h.http().post('/api/v1/sales').set(cashier).send(sale({ confirmDuplicateSale: true })).expect(201);
+    expect(second.body.id).not.toBe(first.body.id);
+    expect(second.body.billNumber).not.toBe(first.body.billNumber);
   });
 
   it('the same Idempotency-Key returns the first bill / receipt, even concurrently', async () => {

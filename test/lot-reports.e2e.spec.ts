@@ -22,7 +22,8 @@ beforeEach(async () => {
 afterEach(async () => { expect(await stockDrift(h.db)).toEqual([]); });
 
 const sell = (kg: number[], lot = 'LOT AP', mark = 'AA', rate = 69) => h.http().post('/api/v1/sales').set(cashier).send({
-  customerId, productId: onionsId, creditDays: 7, tenders: [], items: [{ lotNumber: lot, markCode: mark, ratePerKg: rate, bagWeights: kg.map((weightKg, i) => ({ bagNumber: i + 1, weightKg })) }],
+  customerId, productId: onionsId, creditDays: 7, tenders: [], confirmDuplicateSale: true,
+  items: [{ lotNumber: lot, markCode: mark, ratePerKg: rate, bagWeights: kg.map((weightKg, i) => ({ bagNumber: i + 1, weightKg })) }],
 }).expect(201);
 interface Lot { lotNumber: string; soldBags: number; soldKg: number; salesAmount: number; profit: number | null; status: string; base: { cogs: number | null; amali: number; marketFee: number; outgoingLines: unknown[]; realizedProfit: number | null } }
 const differential = async (token = manager) => (await h.http().get('/api/v1/reports/differential').set(token).expect(200)).body as { lots: Lot[] };

@@ -24,7 +24,7 @@ afterEach(async () => {
 
 // 151 kg × ₹69 = ₹10,419; 3 bags × (₹20 Amali + ₹10 market fee) = ₹90 → ₹10,509 before tax
 const sale = (over: Record<string, unknown> = {}) => ({
-  customerId: customer.id, productId: onionsId, creditDays: 7, tenders: [],
+  customerId: customer.id, productId: onionsId, creditDays: 7, tenders: [], confirmDuplicateSale: true,
   items: [{ lotNumber: 'LOT AP', markCode: 'AA', ratePerKg: 69, bagWeights: [50.5, 50, 50.5].map((weightKg, i) => ({ bagNumber: i + 1, weightKg })) }], ...over,
 });
 const post = (over: Record<string, unknown> = {}) => h.http().post('/api/v1/sales').set(cashier).send(sale(over));

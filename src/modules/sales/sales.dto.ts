@@ -1,7 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
-  ArrayMaxSize, ArrayMinSize, IsArray, IsIn, IsInt, IsNumber, IsOptional, IsPositive, IsString, IsUUID,
+  ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsIn, IsInt, IsNumber, IsOptional, IsPositive, IsString, IsUUID,
   Length, Max, MaxLength, Min, ValidateIf, ValidateNested,
 } from 'class-validator';
 import { ListQueryDto } from '../../common/http/list-query.dto';
@@ -56,6 +56,8 @@ export class CreateSaleDto {
   @IsOptional() @IsIsoDate() date?: string;
   @ApiPropertyOptional({ description: 'Why the bill is dated another day' })
   @IsOptional() @IsString() @MaxLength(500) dateReason?: string;
+  @ApiPropertyOptional({ description: 'Set after the cashier confirms this is a second order, not a repeat of a bill already saved today.' })
+  @IsOptional() @IsBoolean() confirmDuplicateSale?: boolean;
 }
 
 export class RebillSaleDto extends CreateSaleDto {
