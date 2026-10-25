@@ -51,6 +51,13 @@ commented one = production `ep-round-bar`), and answers to the open business que
 - Added a whole-cycle tally test (buy, receive, sell part-credit, collect, pay vendor) with hand-computed figures; wrote
   `questions-for-owner.md`. Backend 80/80 tests. Neon dev migrated (`20261025140000_expenses`) and backfilled with 3 accounts + 7 categories.
 
+### Session 5 — owner's answers implemented
+The owner answered the plain-language questions. Built: vendor opening balance and advance, previous/new due and account statement; vendor bill
+corrections with history and staff access; optional charges; optional GST; cash book and opening balances; staff expenses; the lot breakdown
+report on the server (ported verbatim, the frontend's own tests run unchanged); stock movement filters; per-organization cache; frontend
+`staleTime` 30 s and targeted invalidation; query-count tests against N+1. Found that the dashboard's "Average Floor Rate" is hard-coded text.
+Caught during verification: the screen echoes `receiptStatus: 'RECEIVED'` on a correction, which the server wrongly refused (fixed and tested).
+
 ## Bugs found and fixed along the way (session 1–2, from the transcript) [claimed]
 Unqualified Drizzle SQL fragments broke a correlated subquery; Drizzle-wrapped Postgres errors hid unique-violation handling; test harness
 ordering (supertest) and parallel e2e files against one DB. All moot after the Prisma switch except the lessons: run e2e with `--runInBand`,

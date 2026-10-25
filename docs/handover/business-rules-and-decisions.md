@@ -17,6 +17,13 @@ as the safest option · **?** = open. Full rule detail lives in `docs/architectu
 | D8 | "Edit request" becomes **cancel / rebill**; stock is returned on cancel and re-taken on rebill. | `POST /sales/:id/cancel`, `/rebill`: Owner applies at once, anyone else files an approval. |
 | D9 | Other distributors appear as customers/suppliers (best-way implementation left to the AI). | One `parties` row can be customer and vendor; `Party.linkedOrganizationId` reserved. **No endpoint uses the link yet.** |
 | D11 | Paying a vendor reduces what we owe them. *(provisional, session 4)* | Record Expense with category **Purchase Payments** + vendor. Payable = Σ bills − Σ payments. A payment above what is owed is refused (see `questions-for-owner.md` #1). |
+| D12 | Vendor advance: paying more than owed is allowed and is used by the next bill. | Derived in `vendor-ledger.calc.ts`. |
+| D13 | Vendor opening balance (Owner); previous due is paid before new bills. | `vendors.opening_balance`. |
+| D14 | Vendor bills are corrected, not deleted; staff may correct; every correction keeps previous and current. | `purchase_revisions`. After receipt only rates/charges change. |
+| D15 | Scale / Term / Loading are optional; vendor bills can be dated any day with no approval. | Screen + server. |
+| D16 | GST optional on sale bills: % of invoice (whole rupee) or typed amount, added to the total. | `sales.calc.ts taxFor`. |
+| D17 | Account balances: Owner sets real opening; closing carries to next day; Owner alone sees them; staff see collections of the day. | `cash-book.service.ts`. |
+| D18 | Staff may record expenses, any date; late entries readjust later days. | Derived, nothing stored per day. |
 | D10 | Prisma, not Drizzle; Neon Postgres 18; `ep-odd-flower` = dev, `ep-round-bar` = production. | Done. Production has never been touched. |
 
 ## Phase 7 rules (frontend-derived, F)

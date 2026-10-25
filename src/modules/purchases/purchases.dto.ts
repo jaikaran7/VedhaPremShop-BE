@@ -41,7 +41,8 @@ export class CreatePurchaseDto {
   @ApiProperty({ example: '2026-10-25' }) @Matches(ISO_DATE) date!: string;
   @ApiPropertyOptional() @IsOptional() @Matches(ISO_DATE) expectedArrivalDate?: string;
   @ApiProperty() @IsString() @Length(1, 40) lotNumber!: string;
-  @ApiPropertyOptional({ enum: ['PENDING_RECEIPT'] }) @IsOptional() @IsIn(['PENDING_RECEIPT']) receiptStatus?: 'PENDING_RECEIPT';
+  /** Echoed by the frontend on a correction. A new bill is always awaiting receipt; receiving is its own step. */
+  @ApiPropertyOptional({ enum: ['PENDING_RECEIPT', 'RECEIVED'] }) @IsOptional() @IsIn(['PENDING_RECEIPT', 'RECEIVED']) receiptStatus?: 'PENDING_RECEIPT' | 'RECEIVED';
   @ApiProperty({ type: [PurchaseItemDto] })
   @IsArray() @ArrayMinSize(1) @ArrayMaxSize(50) @ValidateNested({ each: true }) @Type(() => PurchaseItemDto)
   items!: PurchaseItemDto[];

@@ -44,9 +44,11 @@ Status codes: 200/201/204 success · 400 validation · 401 not signed in / expir
 | POST `/customers` | all | `{name, phone?, email?, address?, marketLocation?, kind?, creditLimit?, creditDays?, status?}` → `Customer` | S may not set credit terms/status (403) |
 | PATCH `/customers/:id` | all | partial of the above → `Customer` | Credit fields O/M only; credit changes audited as `UPDATE_CUSTOMER_CREDIT` |
 | DELETE `/customers/:id` | O, M | → 204 | 409 if the customer has any history — block instead |
-| GET `/vendors` · GET `/:id` · POST · PATCH `/:id` | O, M | `Vendor` | `totalPurchases` = Σ purchase net; `payableAmount` = that minus Σ vendor payments (Purchase Payments expenses naming the vendor) |
+| GET `/vendors` · GET `/:id` | all | `Vendor` | Everyone gets identity; **O, M** also get `totalPurchases`, `openingBalance`, `previousDue`, `newDue`, `advanceAmount`, `payableAmount` (derived: payments clear opening first, then oldest bills; excess = advance) |
+| POST `/vendors` · PATCH `/:id` | O, M | `Vendor` | `openingBalance` (owed before the system, may be negative) is **Owner only**, audited |
+| GET `/vendors/:id/ledger` | O, M | → `{vendor, previousDue, newDue, advanceAmount, payableAmount, bills[], payments[]}` | Each bill with paid / balance / status; three queries |
 | GET `/lots`, GET `/lots/:id` | all | → `Lot` | Totals derived from marks; `purchaseRate` omitted for S |
-| GET `/stock/movements` | all | → `StockMovement[]` newest first | bags/kg absolute; type gives direction |
+| GET `/stock/movements` | all | `?lotNumber&markCode&type=A,B&from&to&limit&offset` → `StockMovement[]` newest first | bags/kg absolute; type gives direction; matching count in `X-Total-Count` |
 | POST `/stock/adjustments` | O, M | `{lotNumber, markCode, type ADD/REDUCE, bags, weightKg, reason}` → `StockAdjustment` | 409 if it would go negative |
 | POST `/stock/opening` | O, M | `{lotNumber, markCode, bags, weightKg}` → `StockAdjustment` | Adds the mark to an existing lot if new |
 | GET `/sales` | all | `?from&to&limit&offset` → `Sale[]` | `paidAmount`, `balanceDue`, `paymentStatus` live from allocations |
@@ -59,15 +61,21 @@ Status codes: 200/201/204 success · 400 validation · 401 not signed in / expir
 | POST `/sales/:id/corrections` | all | `{note}` → 204 | Audit note, as in the mock |
 | GET `/payments`, GET `/payments/:id` | all | → `Payment[]` + `billAllocations[]` | `allocation` categories are derived by the frontend |
 | POST `/payments` | all | `{customerId, amount, paymentMethod, referenceNumber?, notes?}` → `Payment` | Excess over what is owed is kept as an advance; Idempotency-Key supported |
-| GET `/settings/costing` · PUT | O, M · O | `{defaultSellingMarginPerKg, roundingRule}` | Applies to receivings done afterwards |
-| GET `/settings/costing/expense-types` · POST · PATCH `/:id` | O, M · O · O | `{name, kind PURCHASE/STOCK_RECEIVING}` → `CostingExpenseType` | Case-insensitive unique per kind (409) |
-| GET `/settings/costing/margins` · POST · PATCH `/:id` | O, M · O · O | `{name, perKg}` → `SellingMarginComponent` | Only per-kg margins are defined |
-| GET `/purchases` · GET `/:id` | O, M | → `Purchase[]` / `Purchase` | Bounded by `limit`/`offset` |
-| POST `/purchases` | O, M | see below → `Purchase` (201) | No stock; totals computed by the server; 409 duplicate bill per vendor; 422 inactive vendor/product/expense type, repeated mark |
-| POST `/purchases/:id/receive` | O, M | `{expenses[], groups[]}` → `Purchase` (200) | Posts stock once; repeats return the received purchase; 422 on any blocking issue; 409 lot holds another product |
-| GET `/cash-accounts` | O, M | → `CashAccount[]` `{id, name, kind CASH/BANK/UPI, openingBalance}` | Seeded; balance (opening + receipts − expenses) is derived by the frontend |
-| GET `/expense-categories` · POST | O, M | `{name, trackingCategory?}` → `ExpenseCategory` | POST of an existing name (any case) returns the existing row |
-| GET `/expenses` · POST | O, M | `{categoryId, amount>0, date, paymentMethod, accountId, reference?, trackingCategory?, vendorId?}` → `Expense` | Category **Purchase Payments** = vendor payment: `vendorId` required, reduces what is owed, 409 if it exceeds what is owed; `vendorId` on any other category is 422. Rows are immutable |
+| GET `/settings/costing` · PUT | all · O | `{defaultSellingMarginPerKg, roundingRule}` | Applies to receivings done afterwards |
+| GET `/settings/costing/expense-types` · POST · PATCH `/:id` | all · O · O | `{name, kind PURCHASE/STOCK_RECEIVING}` → `CostingExpenseType` | Case-insensitive unique per kind (409) |
+| GET `/settings/costing/margins` · POST · PATCH `/:id` | all · O · O | `{name, perKg}` → `SellingMarginComponent` | Only per-kg margins are defined |
+| GET `/purchases` · GET `/:id` | all | → `Purchase[]` / `Purchase` (+ `revisionCount`) | Bounded by `limit`/`offset` |
+| POST `/purchases` | all | see below → `Purchase` (201) | No stock; totals computed by the server; 409 duplicate bill per vendor; 422 inactive vendor/product/expense type, repeated mark |
+| POST `/purchases/:id/receive` | all | `{expenses[], groups[]}` → `Purchase` (200) | Posts stock once; repeats return the received purchase; 422 on any blocking issue; 409 lot holds another product |
+| GET `/cash-accounts` | all | → `CashAccount[]` `{id, name, kind}`; **Owner** also gets `openingBalance`, `openingDate` | Seeded |
+| PUT `/cash-accounts/:id/opening` | O | `{openingBalance, openingDate}` → `CashAccount` | Real money at the start of that day; audited |
+| GET `/cash-book?date=` | O | → `{date, accounts[{opening, received, paidOut, closing}], totals, entries[]}` | Closing of a day = next day's opening; past-dated entries readjust later days; cached 30 s, cleared on any write |
+| GET `/collections/daily?date=` | all | → `{date, collected, byMethod[]}` | Receipts net of refunds; no balances |
+| GET `/expense-categories` · POST | all | `{name, trackingCategory?}` → `ExpenseCategory` | POST of an existing name (any case) returns the existing row |
+| GET `/expenses` · POST | all | `{categoryId, amount>0, date, paymentMethod, accountId, reference?, trackingCategory?, vendorId?}` → `Expense` | Staff may record any date. Owner/Manager list all; a salesperson lists their own. Category **Purchase Payments** = vendor payment: `vendorId` required; paying more than owed is an advance; `vendorId` on any other category is 422. Rows are immutable |
+| PATCH `/purchases/:id` | all | bill fields + `reason` → `Purchase` | Correction. Before receipt anything; after receipt only rates and charges (422 for bags, weight, quality, vendor, product, lot). Previous version kept; a change-less edit records nothing |
+| GET `/purchases/:id/revisions` | all | → `[{revisionNo, editedBy, editedByRole, reason, changes[{label, from, to}], before, after, createdAt}]` | Newest first |
+| GET `/reports/differential` | O, M | → `DifferentialReport` (the lot breakdown) | Built on the server by the ported frontend functions; cached 60 s |
 | GET `/reports` | O, M | → `{sales, payments, customers, vendors, lots, purchases}` | Snapshot the Reports screen computes from; sales/payments/purchases capped at the newest 5000 |
 | GET `/audit` | O, M | → `AuditLog[]` newest first | |
 | GET `/health`, `/health/ready` | public | → `{status}` | ready checks the database |
@@ -118,3 +126,9 @@ Client totals, `vendorName` and similar fields are stripped. Errors: 400 shape, 
 ## Not yet implemented (frontend calls return 404)
 
 `/sales/:id/edit-requests` is superseded by `/sales/:id/rebill`. `POST /auth/role` and `POST /settings/reset` are demo-only and will not exist.
+
+### GST on a bill (POST `/sales`, `/sales/:id/rebill`)
+
+Optional `taxPercent` (0–100, 3 decimals) **or** `taxAmount` (₹, 2 decimals); both → 422. A percentage applies to product + Amali + market fee and is
+rounded to the whole rupee, half up; an amount is kept as typed. `charges.taxPercent` / `charges.taxAmount` come back on the bill; the tax is part of
+`totalAmount`, so the customer owes it (database check: `total = product + Amali + market fee + other + tax`).

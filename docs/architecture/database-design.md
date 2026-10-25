@@ -169,3 +169,17 @@ Vendor payable is never stored: `Σ purchases.net_amount − Σ expenses.amount 
 `expenseDrift` in `reconciliation.ts` checks that a vendor is named on an expense if and only if its category is Purchase Payments, and that no
 vendor has been paid more than their bills.
 Migrations so far: `…000000_init`, `…000100_integrity`, `…120000_purchases`, `…140000_expenses`.
+
+## Vendor ledger, purchase corrections, GST, cash book (migration `20261026000000`)
+
+| Change | Detail |
+|---|---|
+| `vendors.opening_balance` | Owed to the vendor before the system (negative = advance already paid). Previous due / new due / advance are **derived** from it, the bills and the vendor payments (`vendors/vendor-ledger.calc.ts`) |
+| `purchase_revisions` | One row per correction: editor, role, reason, `changes` (previous → current per field), `before`, `after`. Append-only trigger |
+| purchase guards | A purchase and its lines can only be edited inside a transaction that sets `vedhaprem.purchase_edit = 'on'` (the application does, and writes a revision); the trigger still forbids changing a received purchase's receipt (status, receiving record, vendor, product, lot) and deleting a purchase |
+| `sales.tax_percent`, `sales.tax_amount` | Optional GST; the `sales_totals` check now includes the tax |
+| `cash_accounts.opening_date` | The day `opening_balance` is true for; earlier receipts and expenses are ignored for that account |
+| `stock_movements (organization_id, movement_date)` | Index for date-range movement filters |
+
+No per-day balance table exists on purpose: opening, closing and carry-forward are computed from `payments` and `expenses` (indexed by date), so a late,
+past-dated entry can never leave a stale stored balance.

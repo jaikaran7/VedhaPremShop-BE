@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { audit } from '../../common/audit';
 import type { Actor } from '../../common/auth/actor';
 import { businessDate, fromDbDate, toDbDate } from '../../common/dates';
@@ -109,6 +109,7 @@ export class PurchasesService {
 
   /** Records what is owed to the vendor. No stock moves until the consignment is received. Any bill date is accepted. */
   async create(actor: Actor, dto: CreatePurchaseDto) {
+    if (dto.receiptStatus === 'RECEIVED') throw new BadRequestException('A new vendor bill cannot be created as received. Save it, then receive the lot.');
     const id = await this.db.$transaction(async (tx) => {
       const { vendorId, productId, bill } = await this.priceBill(tx, actor, dto);
       const purchase = await tx.purchase.create({ data: {

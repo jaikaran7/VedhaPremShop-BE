@@ -99,6 +99,13 @@ describe('correcting a bill after the lot is received', () => {
     expect(res.body.receiving.groups[0].calculatedFinalRate).toBe(46); // frozen record untouched
   });
 
+  it("accepts the frontend's own correction payload (it echoes the receipt status and client totals)", async () => {
+    const p = await create();
+    await receiveAll(p);
+    await edit(p, { receiptStatus: 'RECEIVED', vendorName: 'ignored', productName: 'ignored', grossAmount: 1, totalExpenses: 1, netAmount: 1, expenses: [] }, 'Charges were not billed').expect(200);
+    await h.http().post('/api/v1/purchases').set(cashier).send(body({ billNumber: 'ED-RCV', receiptStatus: 'RECEIVED' })).expect(400);
+  });
+
   it('what arrived cannot be changed here: quantities, qualities, vendor, lot and product are fixed', async () => {
     const p = await create();
     await receiveAll(p);

@@ -4,41 +4,37 @@ Read this first. It links to the other handover documents instead of repeating t
 [project-history](project-history.md) · [business-rules-and-decisions](business-rules-and-decisions.md) ·
 [implementation-status](implementation-status.md) · [requirements-reconciliation](requirements-reconciliation.md).
 
-## Where things stand (2026-10-25, end of session 4)
+## Where things stand (2026-10-26, end of session 5)
 
-- **Done and verified:** foundation, auth, masters, customers, vendors, stock ledger, sales (backdate approval, cancel/rebill), payments
-  (advances), purchases + receiving + costing, `/reports` snapshot, **expenses, cash accounts and vendor payments** (vendor payable =
-  bills − payments). Backend 80/80 tests, frontend 44/44, lint and typecheck clean. Neon **dev** is migrated (4 migrations) and seeded.
-- **Committed locally, not pushed:** backend `5d0e64e` on `badri-be`, frontend `b1bdad0` on `badri-fe`. **Session 4's own work (expenses,
-  vendor payments, tally test, docs) is not yet committed** — run `git status` in both repos.
-- **Never touched:** production (`ep-round-bar`, the commented `DATABASE_URL`). Keep it that way until a deliberate deploy.
-- **Not browser-tested against the real API:** New Sale date picker/approval notice, rebill, Approvals as Owner/Salesperson, New Purchase, Receive
-  Lot, costing settings, Customers advance line. Only Record Expense with vendor payment was clicked through (mock mode).
+- **Done and verified:** everything in earlier sessions plus the owner's session-5 decisions: vendor opening balance / previous due / new due /
+  advance / account statement; vendor bill corrections with previous→current history (staff can correct); optional charges; any-date vendor
+  bills; optional GST on sale bills; cash book with owner-set openings and day-to-day carry-forward; staff expenses incl. past dates; the lot
+  breakdown report computed on the server; stock movement filters; per-organization cache; query-count (no N+1) tests.
+  Backend 148 tests, frontend 54, lint/typecheck/build clean, Neon **dev** migrated (5 migrations).
+- **Committed locally, not pushed.** Run `git log` in both repos; commit anything new first.
+- **Never touched:** production (`ep-round-bar`).
+- **Not clicked through against the real API in a browser:** only mock mode was driven in a browser (vendor payment/advance/statement, bill
+  correction + history, cash book, salesperson view). The real-API path is covered by e2e tests and a contract script using the screens' own
+  payloads and the frontend's own util code.
 
 ## START HERE NEXT SESSION
 
 ### 0. Housekeeping
-1. Commit session 4's changes in both repos (no `.env`; use `-c user.name=Badrinath-04 -c user.email=badrinath8883@gmail.com` if no git identity;
-   CLAUDE.md forbids a Co-Authored-By trailer). Push only when the owner says so.
-2. The dev API on :4000 (not started by the agent) runs an older build. Restart it to get `/reports`, `/expenses`, `/cash-accounts`:
-   `cd VedhaPremShop-BE && npm run build && npm start`.
+1. Restart the API on :4000 (not started by the agent; it runs an older build): `cd VedhaPremShop-BE && npm run build && npm start`.
+2. Check `git status` in both repos.
 
-### 1. Owner answers (see [questions-for-owner](questions-for-owner.md))
-Apply each answer; most are small rules. The four with real impact on the numbers: #1 vendor advance, #2 vendor opening balances,
-#4 correcting or returning a vendor bill, #11 opening cash/bank/UPI balances. Until answered, the safe defaults in that file apply.
+### 1. Owner confirmations ([questions-for-owner](questions-for-owner.md), Part 2)
+Most important: **past-dated sales bills** (kept needing Owner approval for staff; the owner's latest wording may mean no approval). One-line
+change in `modules/sales/sales.service.ts` (`needsApproval`). Also: dashboard "Average Floor Rate" is hard-coded text in
+`OwnerDashboard.tsx`; owner must pick simple / stock-weighted / sales-weighted before it is made real.
 
-### 2. Next implementation task — vendor bill correction (after question 4 is answered)
-Today a saved purchase cannot be edited, cancelled or returned. Likely design (confirm first): *cancel before receipt* (flag the purchase
-cancelled, remove it from the payable; blocked if payments would exceed the new payable) and *return to vendor after receipt* (negative PURCHASE
-movement through `applyStockChange`, a credit against the payable). Files: `modules/purchases/*`, `prisma/schema.prisma` (+ migration), a
-`purchaseDrift` update, tests in `test/purchases.e2e.spec.ts`.
-
-### 3. Then
-1. **Browser click-through in API mode** of everything listed above (use a throwaway local DB + second API on another port, as in
-   `project-databases-and-safety` memory; never write experiments to Neon dev).
-2. **Phase 8:** metric SQL per `docs/architecture/business-domain.md`, replacing client-side aggregation; remove the 5000-row cap in
-   `reports.controller.ts`.
-3. **Phase 9:** RLS, production migration rehearsal on a Neon branch, deploy, monitoring, backup drill.
+### 2. Next implementation candidates (after the owner answers)
+1. Make "Average Floor Rate" real (small).
+2. "Cancel" for an unreceived vendor bill and "Return to vendor" after receipt (question 6) — negative PURCHASE movement + credit against the payable.
+3. Move the remaining browser-side reports (outstanding, total sales, stock report, customer statement, opening balances) to the server the same
+   way the lot breakdown was moved (port the pure functions, add a cached endpoint, point the screen at it).
+4. Browser click-through in **API mode** (throwaway local DB + second API; never write experiments to Neon dev).
+5. Phase 9: RLS, production migration rehearsal on a Neon branch, deploy, monitoring.
 
 ## Environment facts a new session needs
 

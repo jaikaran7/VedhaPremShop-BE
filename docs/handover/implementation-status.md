@@ -1,4 +1,4 @@
-# Implementation Status (2026-10-25)
+# Implementation Status (2026-10-26, session 5)
 
 Statuses: **Verified complete** · **Implemented, unverified** · **Partial** · **Not implemented** · **Blocked** · **N/A**.
 "Verified" means a command was run in session 3 and passed (listed at the bottom), not that a previous session said so.
@@ -21,7 +21,7 @@ Statuses: **Verified complete** · **Implemented, unverified** · **Partial** ·
 | Receivables | Verified complete | `receivables.ts`, `receivableDrift` | Signed balance from the ledger | — | — |
 | Purchases | **Verified complete (new)** | `modules/purchases/*`, `test/purchases.e2e.spec.ts` | Create bill, receive once, partial acceptance, rate snapshot, immutability, tenancy; **frontend draft/preview matches server on every field** | UI click-through of New Purchase and Receive Lot | Browser run |
 | Costing masters | **Verified complete (new)** | `modules/settings/costing.*` | Default margin, expense types, per-kg margins; Owner writes | — | — |
-| Dashboard / reports | Partial | `modules/reports` | `/reports` returns the six collections the Reports screen computes from; dashboards use list endpoints | Aggregation is client-side; snapshot capped at 5000 rows. SQL metrics (Phase 8) | Metric parity test |
+| Dashboard / reports | Partial | `modules/reports` | **Lot breakdown (differential) computed on the server** by the frontend's own functions (ported verbatim; its tests pass unchanged), cached. `/reports` snapshot for the other reports | Other reports (outstanding, total sales, stock report, statements) still compute in the browser; the dashboard "Average Floor Rate" is hard-coded text | Owner picks the formula |
 | Expenses / cash accounts / vendor payments | **Verified complete (new, session 4)** | `modules/expenses/*`, `modules/vendors/payables.ts`, `test/expenses.e2e.spec.ts`, `test/business-flow.e2e.spec.ts` | Accounts, categories, immutable expenses; Purchase Payments name a vendor and reduce the payable (409 above what is owed, 10 parallel payments cannot overspend); Record Expense checked in a browser in mock mode | Real-API browser click-through; owner questions #1–#4, #11–#12 | Browser run against API |
 | Frontend integration | Mostly complete | `src/api/*` | sales, payments, customers, vendors, lots, stock, purchases, approvals, costing, reports, expenses, accounts wired | `settings/reset` (demo only), `sales/:id/edit-requests` (superseded by rebill) | Browser click-through in API mode |
 | Validation | Verified complete | DTOs | Bounds, decimals, UUIDs, whitelist | — | — |
@@ -46,3 +46,19 @@ Statuses: **Verified complete** · **Implemented, unverified** · **Partial** ·
 
 **Not run:** frontend `next build` (a dev server on :3000 shares `.next`); any browser click-through; frontend lint (baseline of 121 warnings
 from session 2 not re-measured); anything against production.
+
+## Session 5 additions (verified)
+
+| Area | Status | Evidence |
+|---|---|---|
+| Vendor opening balance, previous / new due, advance, account statement | Verified complete | `test/vendors.e2e.spec.ts`, `vendor-ledger.calc.spec.ts`; browser (mock mode) |
+| Vendor bill correction with previous → current history; staff access | Verified complete | `test/purchase-edit.e2e.spec.ts`, `purchase-diff.spec.ts`; browser (mock mode); FE-shaped payload contract script against a real API |
+| Optional charges, any-date vendor bills | Verified complete | tests; New Purchase screen |
+| Optional GST on bills | Verified complete | `sales.calc.spec.ts`, `test/bill-tax.e2e.spec.ts`; FE and server totals agree to the rupee |
+| Cash book, opening balances, staff expenses, daily collections | Verified complete | `test/cash-book.e2e.spec.ts`, FE `cash-book.test.ts`; browser (mock mode) |
+| Lot breakdown on the server; stock movement filters + `X-Total-Count` | Verified complete | `reports/calc/*.spec.ts` (frontend's tests), `test/lot-reports.e2e.spec.ts` |
+| Caching (per organization, in memory, no Redis) | Verified complete | `common/cache.ts`; read-after-write tests |
+| **No N+1** | Verified | `test/lot-reports.e2e.spec.ts` (11 endpoints), `vendors`, `cash-book` specs: query count identical before and after growing the data |
+| Not browser-tested against the real API | — | Only mock mode was clicked through; the real-API path is covered by the contract script and e2e tests |
+
+Totals: backend **148** tests (jest, real Postgres), frontend **54** (node:test); typecheck, lint, build clean; Neon dev migrated (5 migrations).

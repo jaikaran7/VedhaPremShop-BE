@@ -1,86 +1,66 @@
-# Questions for the Owner (plain language)
+# Owner's Answers and What Is Still Open
 
-Business in one line: we buy onions from a bigger distributor, keep them in lots, sell to retailers (cash or credit), collect money, and pay
-the distributor. For each question below: **what it means**, **an example**, **what the system does today**, and **what I suggest**.
-Answer with just the number and your choice, e.g. "1: yes, advance allowed".
-
-Everything marked *today* is already built and working, so no question blocks you from using the system. Your answers only change small rules.
+Plain language. Part 1 records what you decided and where it now lives in the system. Part 2 is the short list of things I had to
+interpret or choose; please confirm or correct them.
 
 ---
 
-## A. Paying the bigger distributor (vendor)
+## Part 1 — Your answers, and what was built
 
-**1. Can you pay a vendor more than you owe them (advance payment)?** *(was Q10)*
-- Example: you owe Murade ₹1,00,000 but you pay ₹1,20,000 because next week's lot is coming.
-- *Today:* the system refuses (it says "more than the ₹1,00,000 owed"), so the books never show a wrong "negative" amount.
-- *Suggest:* if you really do this, say yes and I will show the extra ₹20,000 as "advance with vendor" and use it on the next bill, exactly like a retailer's advance.
+| # | Your answer | What the system does now |
+|---|---|---|
+| 1 | Paying a vendor more than owed is an **advance with the vendor**; the next bill uses it automatically. | Vendor screens show *Advance with vendor*. Paying more than is owed is accepted; the next bill takes the advance first. Example: owe ₹1,00,000, pay ₹1,20,000 → advance ₹20,000; next bill ₹50,000 → you owe ₹30,000. |
+| 2 | **Opening balance per vendor**, and show the **previous due and the new due**. | The Owner enters "owed before the system" on the vendor form (a minus amount means you had already paid ahead). Vendor list and details show **Previous Due**, **New Due**, **Payable** and **Advance**. Payments clear the previous due first, then the oldest bills. |
+| 3 | Vendor account is **account based**, but also show each bill's amount. | Vendor → *Account Statement*: every bill with how much of it is paid, balance and status (Paid / Partly paid / Unpaid), and every payment made. |
+| 4 | Mistakes in a vendor bill: it must be **editable by staff and the Owner**, with the **previous and current** values visible. | **Correct Bill** button on every vendor bill (Owner, Manager, Salesperson). Before the lot is received anything can change. After it is received, rates, charges, bill number, date and notes can change but not what physically arrived (use a stock adjustment for that). Every correction is kept: who, when, why, and each field as **Previous → Current**. The amount owed follows the correction. |
+| 5 | Scale / Term / Loading are **not mandatory**; any charge is optional. | Charges are optional; a charge left at ₹0 is not saved. A bill with no charges is fine. |
+| 6 | Past-dated **vendor bills need no approval**. | Any date, no approval, for any staff member. |
+| 7 | Only **one weight** (no gross/net). | Unchanged: the weight typed is the weight billed. No sack deduction anywhere. |
+| 8 | GST: **optional**, a percentage **or** a typed amount, added to the total. | New Sale has an optional *GST / Tax* box: "% of bill" or "₹ amount". The tax is added to the bill total, shown on the summary and printed bill, and the customer owes it. |
+| 9 | Customers rarely return bags; give **edit bill** and **cancel bill**, and put stock and money back. | Already built earlier (cancel / edit bill = cancel and re-bill): stock returns, money received becomes the customer's credit (counter sales are refunded), and the new bill takes the stock again. Nothing new needed. |
+| 10 | Accounts must start from **today's real cash**, and each day's closing carries to the next day; **only the Owner sees it**; salespeople see only the **cash collected that day**. | Settings → *Cash & Bank Openings* (Owner). *Daily Cash Book* report: per account opening + money in − money out = closing, and closing is the next day's opening. Salespeople see "Cash collected" for the day on their home screen and the Daily Cash Book shows them only collections. Manager sees no balances either. |
+| 11 | Staff can **record expenses, including for past days**, and balances must **readjust** automatically. | Salesperson and Manager can record expenses (a salesperson sees only their own). A past-dated expense moves that day's closing and every later day's opening by itself (nothing is stored per day, so nothing can go out of step). |
+| 12 | **Average floor rate:** keep the current method; "give me a clear idea of what it is". | See Part 2, point 5. |
+| 13 | Trading day ends in the afternoon; **use IST**; at day end the **closing balance** is what matters. | Days are Indian calendar days. The closing balance of each day is shown in the Daily Cash Book. |
+| 14 | Other distributors **never log in**. | Unchanged: they are just names in your customer / vendor lists. |
 
-**2. When you start using the system, do you already owe vendors money from old bills?** *(new)*
-- Example: before today you owe Murade ₹2,50,000 from lots bought last month. Those bills are not in the system.
-- *Today:* the system only counts bills entered here, so "amount we owe" starts at zero and cannot include old dues.
-- *Suggest:* enter an "opening balance owed" for each vendor once (the same way retailers have an opening balance). Tell me the amounts, or tell me you will enter the old bills instead.
-
-**3. Do you pay a vendor against a particular bill, or just "some money on account"?** *(new)*
-- *Today:* just on account. We track "total bought" minus "total paid" per vendor. No bill-by-bill "paid / unpaid" tick.
-- *Suggest:* keep it simple (on account) unless the vendor sends you statements bill by bill.
-
-**4. If a vendor bill was entered wrongly (wrong rate or bags) or goods are sent back, how should it be corrected?** *(new, important)*
-- *Today:* a saved purchase cannot be edited or deleted (like a printed bill). There is no "vendor return" yet.
-- *Suggest:* "cancel and re-enter" for mistakes before the lot is received, and a "return to vendor" entry (reduces stock and the amount owed) after. Tell me if you want exactly this.
-
-## B. Buying (purchases and receiving)
-
-**5. Must every vendor bill have Scale, Term and Loading charges?** *(was Q11)*
-- *Today:* the screen makes you fill all three (each above zero); the server does not insist.
-- *Suggest:* keep it on the screen only, but allow ₹0 if a vendor really charges nothing. Say if it must be strict.
-
-**6. Can a vendor bill be dated on a past day without approval?** *(was Q12)*
-- Retailer bills dated on another day need your approval. Vendor bills have no such rule today.
-- *Suggest:* same rule as sales (past-dated vendor bills wait for you) if staff other than you enter them.
-
-**7. Are the weights you type per bag already net (after taking off the sack), or should the system subtract the sack weight?** *(new)*
-- *Today:* the weight typed is the weight billed. No sack deduction anywhere.
-- *Suggest:* keep as is if your weighing machine shows net onion weight.
-
-## C. Selling and money
-
-**8. When you (the Owner) post a bill dated another day, should it still wait for approval?** *(was Q13)*
-- *Today:* your own back-dated bill goes through immediately (you are the approver). Staff bills wait for you.
-- *Suggest:* keep it.
-
-**9. Do you charge GST or any other tax on bills?** *(new)*
-- *Today:* no tax is added. Bill = onion value + Amali + market fee. Fresh onions are normally GST-exempt, but please confirm for your trade.
-- *Suggest:* leave as is if no tax is charged.
-
-**10. Do customers ever return some bags after delivery?** *(was Q9)*
-- *Today:* only whole-bill "cancel" or "edit bill" (cancel + rebill). No "return 3 of 20 bags" entry.
-- *Suggest:* use edit bill for now; I can add a proper partial return if it happens often.
-
-**11. Where should opening cash, bank and UPI balances come from?** *(new)*
-- *Today:* all three accounts start at ₹0, so "account balance" = money received − money paid out since you began.
-- *Suggest:* tell me today's real cash-in-hand, bank and UPI balances once, and I will set them as opening balances.
-
-**12. Expenses: can staff record them, and can an expense be dated in the past?** *(was Q14)*
-- *Today:* only Owner and Manager can record expenses; any date is accepted; an expense cannot be edited or deleted afterwards (a wrong one needs a correcting entry).
-- *Suggest:* keep, and tell me if past-dated expenses should also wait for your approval.
-
-## D. Reports and the wider business
-
-**13. "Average floor rate" on the dashboard: simple average of all marks, or weighted by the kilograms you actually sold today?** *(was Q6)*
-- Example: mark AA ₹55 (100 kg sold) and mark J ₹45 (900 kg sold): simple average ₹50, weighted ₹46.
-- *Today:* simple average. *Suggest:* weighted, because it reflects what you really sold.
-
-**14. Does your trading day end at midnight?** *(new)*
-- *Today:* "today" means the Indian calendar day (12:00 am to 11:59 pm). A late-night mandi sale still counts for that date.
-- *Suggest:* keep, unless your auction runs past midnight and you want it counted in the previous day.
-
-**15. Will other distributors ever log in to their own books in this system?** *(was D9)*
-- *Today:* other distributors are just names in your customer / vendor lists (one business can be both). They cannot log in.
-- *Suggest:* keep it that way now. Shared books need a separate, careful design (who can see whose stock and money).
+Also done as you asked: the backend does the lot breakdown (landed cost, cost of goods, profit, differences) using the same formulas the
+screens used (the frontend's own tests run unchanged against the server copy); stock movements are filtered and paged in the database;
+screens no longer re-fetch everything on every visit; and tests prove that **the number of database queries does not grow as you add
+sales, bills, payments, expenses or vendors** (no N+1). No Redis: a small in-memory cache per business, cleared the moment anything is saved.
 
 ---
 
-### Already decided by you (for reference)
-Bills default to today but the date can change, and other days need Owner approval · staff can see the approval list but only the Owner decides ·
-extra payment stays as customer advance · blocked or over-limit customers can still be billed, with a red warning · counter-sale cash is
-collected under "Counter sales" · the cashier may sell below the floor rate · "edit bill" means cancel and re-bill with stock put back and re-taken.
+## Part 2 — Please confirm
+
+**1. Past-dated *sales* bills: do they still need your approval?** *(most important)*
+You said past-dated bills can be done by the salesperson without a fuss ("change the date to yesterday and proceed"). Earlier you had asked
+that a sale on another day go to the super admin for approval. Your latest answer could be read either way for **sales**, so I kept the
+earlier rule for sales (staff-dated bills wait for you; your own post at once) and applied "no approval" to **vendor bills and expenses**,
+where you were clear. If you want sales bills to need no approval either, it is a one-line change. Tell me.
+
+**2. Staff now see vendor bill amounts and the costing rates.**
+To enter, correct and receive vendor bills, a salesperson must see the rates on those bills and the costing settings (default margin, extra
+margins). They still do **not** see what we owe vendors, vendor accounts, profit, or cash balances. Is that acceptable?
+
+**3. GST is worked out on the whole invoice (onions + Amali + market fee) and rounded to the whole rupee**
+when you enter a percentage. Example: 5% of ₹10,509 = ₹525.45 → ₹525. A typed amount is kept exactly. Is that how you want it?
+
+**4. Money recorded for a day before an account's opening date is ignored in the balance.**
+Example: you set Cash in Hand = ₹10,000 from 20 Oct. A cash expense dated 19 Oct is saved, but does not change the balance (your ₹10,000 already
+reflects it). Is that right?
+
+**5. What is the "Average Floor Rate"?** (you asked for a clear idea)
+The *floor rate* is the lowest rate per kg you let the counter sell each quality (mark) for; you set it daily in Settings → Daily Floor Rates.
+The *average* is meant to be one number summarising today's rates. Today's seed rates: AA ₹69, J ₹64, K ₹58, OK ₹49, CV ₹71, TC ₹61.
+- **Simple average** = add the six rates and divide by 6 = **₹62.00**. Treats a quality you hold 50 kg of the same as one you hold 8,000 kg of.
+- **Weighted by stock** = each rate counted in proportion to the kilograms in the yard = **₹63.70**. Closer to what your stock is worth per kg.
+- **Weighted by sales** = each rate counted by the kilograms sold today. Shows what you actually sold at.
+**What is on the dashboard right now is neither: the text "₹69.00 / KG, Top Mark AA" is typed into the screen and never changes.** Tell me which
+of the three you want (I would suggest weighted by stock) and I will make it real. Until then I left it as it was, as you asked.
+
+**6. Wrongly entered vendor bill that should not exist at all.**
+A bill can be corrected but not deleted (money history is never deleted). If a bill was entered twice, the usual fix is to correct one to the
+right values. Do you also want a "Cancel bill" for an unreceived vendor bill, and a "Return to vendor" for goods sent back after receiving?
+
+**7. The Manager does not see account balances either.** Only the Owner does, as you said. The Manager still sees expenses, collections and vendor accounts.
