@@ -156,3 +156,16 @@ inside the opening balances and remaining stock.
 `organizations.default_selling_margin_per_kg` (default 6) is the costing setting; the rounding rule is fixed (`CEIL_WHOLE_RUPEE`).
 `lots.purchase_id` points at the purchase that created the lot (later purchases of the same lot number extend it).
 `purchaseDrift` in `src/database/reconciliation.ts` checks PURCHASE_IN bags against each received purchase's recorded groups.
+
+## Expenses and cash accounts
+
+| Table | Purpose | Key constraints |
+|---|---|---|
+| `cash_accounts` | Cash / Bank / UPI accounts with an opening balance | unique (org, name) |
+| `expense_categories` | Expense heads; optional `tracking_category` nets against a collection bucket | unique (org, lower(name)) |
+| `expenses` | Money paid out of an account; `vendor_party_id` set when the category is "Purchase Payments" | `amount > 0`; **append-only trigger** (corrections are new rows) |
+
+Vendor payable is never stored: `Σ purchases.net_amount − Σ expenses.amount where vendor_party_id = vendor` (`modules/vendors/payables.ts`).
+`expenseDrift` in `reconciliation.ts` checks that a vendor is named on an expense if and only if its category is Purchase Payments, and that no
+vendor has been paid more than their bills.
+Migrations so far: `…000000_init`, `…000100_integrity`, `…120000_purchases`, `…140000_expenses`.

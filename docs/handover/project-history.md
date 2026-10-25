@@ -43,6 +43,14 @@ commented one = production `ep-round-bar`), and answers to the open business que
   (one-off script, deleted afterwards). **[run]**
 - Added "Advance" lines to the Customers list/details (the user asked for advances to show as a positive number; only New Sale did).
 
+### Session 4 — commit, expenses, vendor payments
+- Owner approved committing; both repos committed locally (not pushed).
+- The frontend's "Vendor Payments" tab turned out to be a filter on expenses in the category "Purchase Payments" with no vendor attached.
+  Built `/expenses`, `/expense-categories`, `/cash-accounts`, and attached a vendor to those payments so the payable falls when a vendor is paid
+  (provisional rule D11). Added a vendor picker to the Record Expense screen.
+- Added a whole-cycle tally test (buy, receive, sell part-credit, collect, pay vendor) with hand-computed figures; wrote
+  `questions-for-owner.md`. Backend 80/80 tests. Neon dev migrated (`20261025140000_expenses`) and backfilled with 3 accounts + 7 categories.
+
 ## Bugs found and fixed along the way (session 1–2, from the transcript) [claimed]
 Unqualified Drizzle SQL fragments broke a correlated subquery; Drizzle-wrapped Postgres errors hid unique-violation handling; test harness
 ordering (supertest) and parallel e2e files against one DB. All moot after the Prisma switch except the lessons: run e2e with `--runInBand`,

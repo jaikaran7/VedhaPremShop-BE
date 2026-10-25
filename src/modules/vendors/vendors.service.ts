@@ -1,8 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { audit } from '../../common/audit';
 import type { Actor } from '../../common/auth/actor';
+import { fromPaise } from '../../common/money';
 import { nextSequence, partyCode } from '../../common/sequences';
 import { PrismaService, TX_OPTIONS } from '../../database/prisma.service';
+import { vendorBalances } from './payables';
 import type { CreateVendorDto, UpdateVendorDto } from './vendors.dto';
 
 @Injectable()
@@ -15,9 +17,7 @@ export class VendorsService {
       include: { party: true },
       orderBy: { code: 'asc' },
     });
-    // Owed to a vendor = sum of its purchase bills (goods + purchase expenses). There is no vendor payment flow yet, so nothing reduces it.
-    const owed = new Map((await this.db.purchase.groupBy({ by: ['vendorPartyId'], where: { organizationId: actor.organizationId }, _sum: { netAmount: true } }))
-      .map((g) => [g.vendorPartyId, Number(g._sum.netAmount ?? 0)]));
+    const balances = await vendorBalances(this.db, actor.organizationId, partyId);
     return rows.map(({ party, ...vendor }) => ({
       id: party.id,
       code: vendor.code,
@@ -26,8 +26,8 @@ export class VendorsService {
       ...(party.email && { email: party.email }),
       address: party.address,
       mandiCity: party.location,
-      totalPurchases: owed.get(party.id) ?? 0,
-      payableAmount: owed.get(party.id) ?? 0,
+      totalPurchases: fromPaise(balances.get(party.id)?.purchasedPaise ?? 0),
+      payableAmount: fromPaise((balances.get(party.id)?.purchasedPaise ?? 0) - (balances.get(party.id)?.paidPaise ?? 0)),
       status: vendor.status,
       createdAt: vendor.createdAt.toISOString(),
     }));

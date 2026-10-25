@@ -18,13 +18,12 @@ audit log inside the business transaction · migrations only (no schema sync) ·
 | Drizzle (session 1's pick) | **Prisma 7.10.1** | Owner's instruction in P2 |
 | Postgres 17 local | Neon dev is **PG 18.6**; local test DB is 17 | Owner chose 18; tests use a disposable local DB. Different majors — see risk R5 |
 | Dashboard metrics computed in SQL | Frontend computes from list endpoints; `/reports` snapshot | SQL aggregation is Phase 8 |
-| Vendor payables = purchases − vendor payments | = purchases only | No payment flow exists anywhere (Q10) |
+| Vendor payables = purchases − vendor payments | Done (session 4): vendor payments are Purchase Payments expenses naming a vendor | Advance / opening balance open |
 
 ## Not implemented
 
 | Item | Source | Note |
 |---|---|---|
-| Expenses, expense categories, cash accounts | Frontend (`/expenses`, `/expense-categories`, `/cash-accounts`) | Needed by Collections; next task |
 | Distributor-as-organization linking | P2 | Schema column only; needs an invite/link flow and cross-org read rules |
 | Row-level security | P1 §7.1 | Phase 9 |
 | Server-side search/pagination for customers, sales | P1 §9 | Lists are bounded (default 1000, max 5000) |

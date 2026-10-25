@@ -16,6 +16,7 @@ as the safest option · **?** = open. Full rule detail lives in `docs/architectu
 | D7 | The cashier may sell below the floor rate. | Only `rate > 0` is checked; below-floor is allowed. |
 | D8 | "Edit request" becomes **cancel / rebill**; stock is returned on cancel and re-taken on rebill. | `POST /sales/:id/cancel`, `/rebill`: Owner applies at once, anyone else files an approval. |
 | D9 | Other distributors appear as customers/suppliers (best-way implementation left to the AI). | One `parties` row can be customer and vendor; `Party.linkedOrganizationId` reserved. **No endpoint uses the link yet.** |
+| D11 | Paying a vendor reduces what we owe them. *(provisional, session 4)* | Record Expense with category **Purchase Payments** + vendor. Payable = Σ bills − Σ payments. A payment above what is owed is refused (see `questions-for-owner.md` #1). |
 | D10 | Prisma, not Drizzle; Neon Postgres 18; `ep-odd-flower` = dev, `ep-round-bar` = production. | Done. Production has never been touched. |
 
 ## Phase 7 rules (frontend-derived, F)
@@ -44,12 +45,15 @@ as the safest option · **?** = open. Full rule detail lives in `docs/architectu
 
 ## Open questions for the owner
 
+The plain-language version, with examples and suggestions, is `questions-for-owner.md`. Short table:
+
+
 | # | Question | Today's behaviour |
 |---|---|---|
 | Q6 | "Average floor rate": mean of mark masters, or weighted by kg sold? | Unchanged from the mock. |
 | Q9 | Partial bag returns from customers? | Not supported; cancel/rebill only. |
-| Q10 | **Vendor payments.** The frontend seed shows vendor `payableAmount` well below `totalPurchases` (e.g. ₹1,84,500 of ₹7,08,500) but no screen or API records a vendor payment. | Payable = total purchases; nothing reduces it. Needs a decision before real use. |
+| Q10 | Vendor payments (advance, opening balance, per-bill). | **Partly resolved:** the frontend's "Vendor Payments" tab is Purchase Payments expenses; now each names a vendor and reduces the payable. Advance and opening balance still open (`questions-for-owner.md` #1–#3). |
 | Q11 | Must every consignment carry Scale, Term and Loading (the New Purchase screen enforces it)? | Enforced by the UI only; the server accepts a bill without them. |
 | Q12 | Do purchases need a date rule like sales (backdating approval)? | No rule; any date accepted. |
 | Q13 | Should the Owner's own backdated bill really skip approval? | Posts directly. |
-| Q14 | Expenses and cash accounts: how should a cash account's balance relate to collections and expenses? | Not implemented (see checkpoint). |
+| Q14 | Expenses: who may record, date rules, opening account balances. | Implemented: Owner/Manager, any date, immutable rows, accounts open at ₹0. See `questions-for-owner.md` #11–#12. |

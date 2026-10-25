@@ -44,7 +44,7 @@ Status codes: 200/201/204 success · 400 validation · 401 not signed in / expir
 | POST `/customers` | all | `{name, phone?, email?, address?, marketLocation?, kind?, creditLimit?, creditDays?, status?}` → `Customer` | S may not set credit terms/status (403) |
 | PATCH `/customers/:id` | all | partial of the above → `Customer` | Credit fields O/M only; credit changes audited as `UPDATE_CUSTOMER_CREDIT` |
 | DELETE `/customers/:id` | O, M | → 204 | 409 if the customer has any history — block instead |
-| GET `/vendors` · GET `/:id` · POST · PATCH `/:id` | O, M | `Vendor` | `totalPurchases` = `payableAmount` = Σ purchase net (no vendor payments yet) |
+| GET `/vendors` · GET `/:id` · POST · PATCH `/:id` | O, M | `Vendor` | `totalPurchases` = Σ purchase net; `payableAmount` = that minus Σ vendor payments (Purchase Payments expenses naming the vendor) |
 | GET `/lots`, GET `/lots/:id` | all | → `Lot` | Totals derived from marks; `purchaseRate` omitted for S |
 | GET `/stock/movements` | all | → `StockMovement[]` newest first | bags/kg absolute; type gives direction |
 | POST `/stock/adjustments` | O, M | `{lotNumber, markCode, type ADD/REDUCE, bags, weightKg, reason}` → `StockAdjustment` | 409 if it would go negative |
@@ -65,6 +65,9 @@ Status codes: 200/201/204 success · 400 validation · 401 not signed in / expir
 | GET `/purchases` · GET `/:id` | O, M | → `Purchase[]` / `Purchase` | Bounded by `limit`/`offset` |
 | POST `/purchases` | O, M | see below → `Purchase` (201) | No stock; totals computed by the server; 409 duplicate bill per vendor; 422 inactive vendor/product/expense type, repeated mark |
 | POST `/purchases/:id/receive` | O, M | `{expenses[], groups[]}` → `Purchase` (200) | Posts stock once; repeats return the received purchase; 422 on any blocking issue; 409 lot holds another product |
+| GET `/cash-accounts` | O, M | → `CashAccount[]` `{id, name, kind CASH/BANK/UPI, openingBalance}` | Seeded; balance (opening + receipts − expenses) is derived by the frontend |
+| GET `/expense-categories` · POST | O, M | `{name, trackingCategory?}` → `ExpenseCategory` | POST of an existing name (any case) returns the existing row |
+| GET `/expenses` · POST | O, M | `{categoryId, amount>0, date, paymentMethod, accountId, reference?, trackingCategory?, vendorId?}` → `Expense` | Category **Purchase Payments** = vendor payment: `vendorId` required, reduces what is owed, 409 if it exceeds what is owed; `vendorId` on any other category is 422. Rows are immutable |
 | GET `/reports` | O, M | → `{sales, payments, customers, vendors, lots, purchases}` | Snapshot the Reports screen computes from; sales/payments/purchases capped at the newest 5000 |
 | GET `/audit` | O, M | → `AuditLog[]` newest first | |
 | GET `/health`, `/health/ready` | public | → `{status}` | ready checks the database |
@@ -114,5 +117,4 @@ Client totals, `vendorName` and similar fields are stripped. Errors: 400 shape, 
 
 ## Not yet implemented (frontend calls return 404)
 
-`/expenses`, `/expense-categories`, `/cash-accounts` (next task, see `docs/handover/continuation-checkpoint.md`).
 `/sales/:id/edit-requests` is superseded by `/sales/:id/rebill`. `POST /auth/role` and `POST /settings/reset` are demo-only and will not exist.

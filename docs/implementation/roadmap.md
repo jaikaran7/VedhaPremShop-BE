@@ -16,7 +16,7 @@ for the app), and exercised from the frontend where a screen exists. Handover de
 | 8 | Dashboard/report aggregates in SQL, paginated history, metric definitions from `business-domain.md` | Planned | — |
 | 9 | Hardening: RLS, APM, load test, backup drill, dependency overrides, production deploy | Planned | — |
 | 6b | Backdated-bill approvals, cancel/rebill, advances, Prisma + Neon switch | Done (session 2); new frontend screens typechecked, not browser-tested | `test/sales.e2e.spec.ts` |
-| 8a | Expenses, expense categories, cash accounts (Collections screen) | **Next** | `docs/handover/continuation-checkpoint.md` |
+| 8a | Expenses, expense categories, cash accounts, vendor payments (Collections screen) | **Done (session 4)** | `test/expenses.e2e.spec.ts` (8), `test/business-flow.e2e.spec.ts` (1), Neon dev migrated |
 
 ## Acceptance criteria for Phase 7 (met, except as noted)
 
@@ -24,7 +24,7 @@ for the app), and exercised from the frontend where a screen exists. Handover de
 2. `POST /purchases/:id/receive` evaluates receiving server-side with the same rules as `utils/receiving.ts`
    (accepted/defective bags, expense allocation by kg/bags/group, landed cost, rounding `CEIL_WHOLE_RUPEE`,
    override reason), creates/extends the lot, writes PURCHASE_IN movements, freezes the rate snapshot.
-3. Vendor payables derived from purchases (**minus vendor payments: not met — no payment flow exists, Q10**); `Vendor.totalPurchases/payableAmount` real.
+3. Vendor payables derived from purchases minus vendor payments (met in session 4 via Purchase Payments expenses); `Vendor.totalPurchases/payableAmount` real.
 4. New Sale blocks lots whose purchase is still pending receipt (frontend already checks `receiptStatus`).
 5. Reconciliation extended (`purchaseDrift`); e2e for receive-twice, partial acceptance and 10 concurrent receives. Payables need no separate
    reconciliation: they are a sum over purchases.

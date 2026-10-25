@@ -98,6 +98,21 @@ enum ApprovalStatus {
   REJECTED
 }
 
+enum CashAccountKind {
+  CASH
+  BANK
+  UPI
+}
+
+/// Which collection bucket an expense nets against (frontend CollectionCategoryId).
+enum CollectionCategory {
+  ONION_SALES
+  AMALI
+  OTHER_PRODUCT
+  MARKET_FEE
+  OTHER
+}
+
 enum PurchaseReceiptStatus {
   PENDING_RECEIPT
   RECEIVED
@@ -141,6 +156,9 @@ model Organization {
   costingExpenseTypes CostingExpenseType[]
   sellingMargins      SellingMarginComponent[]
   purchases           Purchase[]
+  cashAccounts        CashAccount[]
+  expenseCategories   ExpenseCategory[]
+  expenses            Expense[]
   purchaseItems       PurchaseItem[]
   purchaseExpenses    PurchaseExpense[]
   memberships         Membership[]
@@ -253,6 +271,7 @@ model Party {
   payments           Payment[]
   lotsSupplied       Lot[]
   purchases          Purchase[]
+  vendorPayments     Expense[]
 
   @@index([organizationId])
   @@map("parties")
@@ -723,4 +742,61 @@ model PurchaseExpense {
 
   @@index([purchaseId])
   @@map("purchase_expenses")
+}
+
+/// Where money sits (cash drawer, bank, UPI). The balance is opening + receipts − expenses, derived by the frontend.
+model CashAccount {
+  id             String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String          @map("organization_id") @db.Uuid
+  name           String
+  kind           CashAccountKind
+  openingBalance Decimal         @default(0) @map("opening_balance") @db.Decimal(14, 2)
+  createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  expenses     Expense[]
+
+  @@unique([organizationId, name])
+  @@map("cash_accounts")
+}
+
+model ExpenseCategory {
+  id               String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId   String              @map("organization_id") @db.Uuid
+  name             String
+  trackingCategory CollectionCategory? @map("tracking_category")
+  createdAt        DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  expenses     Expense[]
+
+  @@unique([organizationId, name])
+  @@map("expense_categories")
+}
+
+/// Money paid out of an account. An expense in the "Purchase Payments" category is a vendor payment and names its vendor,
+/// which reduces what is owed to that vendor. Immutable once recorded.
+model Expense {
+  id               String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId   String              @map("organization_id") @db.Uuid
+  categoryId       String              @map("category_id") @db.Uuid
+  accountId        String              @map("account_id") @db.Uuid
+  vendorPartyId    String?             @map("vendor_party_id") @db.Uuid
+  amount           Decimal             @db.Decimal(14, 2)
+  expenseDate      DateTime            @map("expense_date") @db.Date
+  paymentMethod    PaymentMethod       @map("payment_method")
+  reference        String?
+  trackingCategory CollectionCategory? @map("tracking_category")
+  recordedByUserId String?             @map("recorded_by_user_id") @db.Uuid
+  recordedByName   String              @map("recorded_by_name")
+  createdAt        DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization    @relation(fields: [organizationId], references: [id])
+  category     ExpenseCategory @relation(fields: [categoryId], references: [id])
+  account      CashAccount     @relation(fields: [accountId], references: [id])
+  vendorParty  Party?          @relation(fields: [vendorPartyId], references: [id])
+
+  @@index([organizationId, expenseDate])
+  @@index([vendorPartyId])
+  @@map("expenses")
 }

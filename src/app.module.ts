@@ -10,6 +10,7 @@ import { HealthController } from './health/health.controller';
 import { AuditModule } from './modules/audit/audit.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CustomersModule } from './modules/customers/customers.module';
+import { ExpensesModule } from './modules/expenses/expenses.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { PurchasesModule } from './modules/purchases/purchases.module';
@@ -30,7 +31,7 @@ export class AppModule {
         // shortcut: in-memory rate-limit counters are per instance; move to a shared store when running >1 instance.
         ThrottlerModule.forRoot({ throttlers: [{ ttl: 60_000, limit: 300 }], skipIf: () => env.nodeEnv === 'test' }),
         DbModule,
-        AuthModule, UsersModule, SettingsModule, CustomersModule, VendorsModule, InventoryModule, PurchasesModule, SalesModule, PaymentsModule, ReportsModule, AuditModule,
+        AuthModule, UsersModule, SettingsModule, CustomersModule, VendorsModule, InventoryModule, ExpensesModule, PurchasesModule, SalesModule, PaymentsModule, ReportsModule, AuditModule,
       ],
       controllers: [HealthController],
       providers: [

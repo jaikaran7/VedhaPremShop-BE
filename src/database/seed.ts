@@ -1,6 +1,6 @@
 import { PrismaPg } from '@prisma/adapter-pg';
 import { toDbDate } from '../common/dates';
-import { type CostingExpenseKind, PrismaClient, type PurchaseExpenseType, type QualityGrade, type UserRole } from '../generated/prisma/client';
+import { type CashAccountKind, type CollectionCategory, type CostingExpenseKind, PrismaClient, type PurchaseExpenseType, type QualityGrade, type UserRole } from '../generated/prisma/client';
 import { hashPassword } from '../modules/auth/passwords';
 import fixture from './seeds/dev-fixture.json';
 
@@ -62,6 +62,9 @@ export async function seedDevData(db: PrismaClient, password: string): Promise<{
       await tx.vendor.create({ data: { partyId: party.id, organizationId, code: v.code } });
       vendorIds.set(v.key, party.id);
     }
+
+    await tx.cashAccount.createMany({ data: fixture.cashAccounts.map((a) => ({ organizationId, name: a.name, kind: a.kind as CashAccountKind, openingBalance: a.openingBalance })) });
+    await tx.expenseCategory.createMany({ data: fixture.expenseCategories.map((c) => ({ organizationId, name: c.name, trackingCategory: c.trackingCategory as CollectionCategory | null })) });
 
     const expenseTypeIds = new Map<string, string>();
     for (const t of fixture.costingExpenseTypes) {

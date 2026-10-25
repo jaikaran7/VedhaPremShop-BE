@@ -4,55 +4,41 @@ Read this first. It links to the other handover documents instead of repeating t
 [project-history](project-history.md) · [business-rules-and-decisions](business-rules-and-decisions.md) ·
 [implementation-status](implementation-status.md) · [requirements-reconciliation](requirements-reconciliation.md).
 
-## Where things stand (2026-10-25)
+## Where things stand (2026-10-25, end of session 4)
 
 - **Done and verified:** foundation, auth, masters, customers, vendors, stock ledger, sales (backdate approval, cancel/rebill), payments
-  (advances), **Phase 7: costing, purchases, receiving, vendor payables, `/reports` snapshot**. Backend 71/71 tests, frontend 44/44, lint and
-  typecheck clean, migrations applied to Neon **dev**.
-- **Stopping point of the previous session:** frontend Sale Details actions and Approvals screen (present in source, type-checked, not
-  browser-tested, not committed).
-- **Not committed anywhere.** `VedhaPremShop-BE` has one empty commit; `VedhaPremShop-FE` has ~24 modified files.
-- **Never touched:** production (`ep-round-bar`, the commented `DATABASE_URL` in `.env`). Keep it that way until a deliberate deploy.
+  (advances), purchases + receiving + costing, `/reports` snapshot, **expenses, cash accounts and vendor payments** (vendor payable =
+  bills − payments). Backend 80/80 tests, frontend 44/44, lint and typecheck clean. Neon **dev** is migrated (4 migrations) and seeded.
+- **Committed locally, not pushed:** backend `5d0e64e` on `badri-be`, frontend `b1bdad0` on `badri-fe`. **Session 4's own work (expenses,
+  vendor payments, tally test, docs) is not yet committed** — run `git status` in both repos.
+- **Never touched:** production (`ep-round-bar`, the commented `DATABASE_URL`). Keep it that way until a deliberate deploy.
+- **Not browser-tested against the real API:** New Sale date picker/approval notice, rebill, Approvals as Owner/Salesperson, New Purchase, Receive
+  Lot, costing settings, Customers advance line. Only Record Expense with vendor payment was clicked through (mock mode).
 
 ## START HERE NEXT SESSION
 
-### 0. Housekeeping (5 minutes, needs the owner's go-ahead)
-1. Commit both repos (`badri-be`, `badri-fe`). Do not commit `.env` (it is gitignored).
-2. The API on :4000 (PID may differ) was started before the `/reports` route existed. Restart it: `cd VedhaPremShop-BE && npm run build && npm start`.
+### 0. Housekeeping
+1. Commit session 4's changes in both repos (no `.env`; use `-c user.name=Badrinath-04 -c user.email=badrinath8883@gmail.com` if no git identity;
+   CLAUDE.md forbids a Co-Authored-By trailer). Push only when the owner says so.
+2. The dev API on :4000 (not started by the agent) runs an older build. Restart it to get `/reports`, `/expenses`, `/cash-accounts`:
+   `cd VedhaPremShop-BE && npm run build && npm start`.
 
-### 1. Next implementation task — Expenses, expense categories, cash accounts
-**Why:** the frontend Collections screen (`src/hooks/queries/use-collections-query.ts` → `use-expenses-query.ts`) and Record Expense page call
-`/expenses`, `/expense-categories`, `/cash-accounts`; all return 404 in API mode.
+### 1. Owner answers (see [questions-for-owner](questions-for-owner.md))
+Apply each answer; most are small rules. The four with real impact on the numbers: #1 vendor advance, #2 vendor opening balances,
+#4 correcting or returning a vendor bill, #11 opening cash/bank/UPI balances. Until answered, the safe defaults in that file apply.
 
-**Contract (from `src/api/payments.api.ts` and `src/types/index.ts`):**
+### 2. Next implementation task — vendor bill correction (after question 4 is answered)
+Today a saved purchase cannot be edited, cancelled or returned. Likely design (confirm first): *cancel before receipt* (flag the purchase
+cancelled, remove it from the payable; blocked if payments would exceed the new payable) and *return to vendor after receipt* (negative PURCHASE
+movement through `applyStockChange`, a credit against the payable). Files: `modules/purchases/*`, `prisma/schema.prisma` (+ migration), a
+`purchaseDrift` update, tests in `test/purchases.e2e.spec.ts`.
 
-| Method & path | Roles | Body → Response |
-|---|---|---|
-| GET `/cash-accounts` | O, M | → `CashAccount[]` `{id, name, kind CASH/BANK/UPI, openingBalance}` (seeded; no create endpoint exists in the frontend) |
-| GET `/expense-categories` · POST | O, M | `{name, trackingCategory: ONION_SALES/AMALI/OTHER_PRODUCT/MARKET_FEE/OTHER \| null}` → `ExpenseCategory`; POST of an existing name (case-insensitive) returns the existing row (mock behaviour) |
-| GET `/expenses` · POST | O, M | `{categoryId, amount>0, date, paymentMethod, accountId, reference?, trackingCategory?}` → `Expense` (adds `categoryName`, `accountName`, `recordedBy`, `createdAt`) |
-
-**Files to add** (follow `modules/purchases` and `modules/settings/costing.*`): `prisma/schema.prisma` models `CashAccount`,
-`ExpenseCategory`, `Expense` + a new migration (generate with `prisma migrate diff` against a scratch DB, then append CHECKs:
-`amount > 0`, expense append-only trigger via the existing `forbid_history_change()`); `src/modules/expenses/{expenses.module,controller,service,dto}.ts`;
-register in `app.module.ts`; extend `database/seed.ts` + `seeds/dev-fixture.json` from `SEED_CASH_ACCOUNTS` / `SEED_EXPENSE_CATEGORIES` in the
-frontend's `src/data/seed.ts`; add `/expenses` data to `ReportsController` only if the Reports screen needs it (check `use-reports-query`).
-
-**Rules already defined by the frontend:** `validateExpense` in `src/utils/collection-ledger.ts:342`. Account balances are computed by the
-frontend as opening + received − paid out (`collection-ledger.ts` ~line 320); the backend only stores rows. Money in paise, audit inside the
-transaction, `organization_id` from the token only.
-
-**Acceptance:** (a) e2e `test/expenses.e2e.spec.ts`: create category → record expense → list; bad amount/date/unknown category/account → 400/404;
-salesperson 403; other org 404; expense row cannot be updated/deleted in SQL. (b) `npm run typecheck && npm run lint && npm test` green.
-(c) Browser: Collections and Record Expense load against the API with no 404 (`read_network_requests`). (d) Update `implementation-status.md`.
-
-### 2. After that (in order)
-1. **Owner decisions** that unblock design: Q10 (vendor payments), Q11 (mandatory consignment charges), D9 (distributor linking). See business rules.
-2. **Browser click-through** of everything session 2 and 3 added but only type-checked: New Sale date picker + approval notice, rebill, Approvals
-   screen as Owner and as Salesperson, credit warning, New Purchase, Receive Lot, Costing settings, Customers advance line.
-3. **Phase 8:** metric SQL per `docs/architecture/business-domain.md` (revenue, collections, receivables, stock), replacing client-side
-   aggregation; remove the 5000-row snapshot cap in `reports.controller.ts`.
-4. **Phase 9:** RLS, production migration rehearsal on a Neon branch, deploy, monitoring, backup drill.
+### 3. Then
+1. **Browser click-through in API mode** of everything listed above (use a throwaway local DB + second API on another port, as in
+   `project-databases-and-safety` memory; never write experiments to Neon dev).
+2. **Phase 8:** metric SQL per `docs/architecture/business-domain.md`, replacing client-side aggregation; remove the 5000-row cap in
+   `reports.controller.ts`.
+3. **Phase 9:** RLS, production migration rehearsal on a Neon branch, deploy, monitoring, backup drill.
 
 ## Environment facts a new session needs
 
@@ -76,7 +62,7 @@ salesperson 403; other org 404; expense row cannot be updated/deleted in SQL. (b
 | R1 | All work uncommitted | Commit (step 0) |
 | R2 | Production DB has no schema | Intentional; run `db:migrate` against it only at deploy, after a Neon branch rehearsal |
 | R3 | Receiving math duplicated in FE and BE | Parity script passed; keep `costing.ts`/`receiving.ts` and `receiving.calc.ts` in step |
-| R4 | Vendor payable can only grow (no payments) | Q10 |
+| R4 | Vendor payable has no advance, opening balance or return handling yet | questions 1, 2, 4 |
 | R5 | Tests run on PG 17, Neon is PG 18 | No version-specific SQL used so far; add a PG 18 test branch before production |
 | R6 | `/reports` snapshot is capped at 5000 rows and cost-bearing | Owner/Manager only; Phase 8 replaces it |
 | R7 | In-memory rate limiter is per instance | Move to a shared store before running more than one instance |

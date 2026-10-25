@@ -904,5 +904,52 @@
       "kind": "STOCK_RECEIVING"
     }
   ],
-  "marginComponents": []
+  "marginComponents": [],
+  "cashAccounts": [
+    {
+      "name": "Cash in Hand",
+      "kind": "CASH",
+      "openingBalance": 0
+    },
+    {
+      "name": "UPI Account",
+      "kind": "UPI",
+      "openingBalance": 0
+    },
+    {
+      "name": "Bank Account",
+      "kind": "BANK",
+      "openingBalance": 0
+    }
+  ],
+  "expenseCategories": [
+    {
+      "name": "Market Fee Expense",
+      "trackingCategory": "MARKET_FEE"
+    },
+    {
+      "name": "Amali Expense",
+      "trackingCategory": "AMALI"
+    },
+    {
+      "name": "Transport",
+      "trackingCategory": null
+    },
+    {
+      "name": "Labour",
+      "trackingCategory": null
+    },
+    {
+      "name": "Loading/Unloading",
+      "trackingCategory": null
+    },
+    {
+      "name": "Purchase Payments",
+      "trackingCategory": null
+    },
+    {
+      "name": "Other Operating Expenses",
+      "trackingCategory": null
+    }
+  ]
 }

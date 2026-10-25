@@ -73,3 +73,16 @@ export function purchaseDrift(db: Db) {
     WHERE (p.receipt_status = 'PENDING_RECEIPT' AND coalesce(m.bags, 0) <> 0)
        OR (p.receipt_status = 'RECEIVED' AND g.n > 0 AND coalesce(m.bags, 0) <> g.bags)`;
 }
+
+/**
+ * Vendor payments: an expense names a vendor if and only if its category is "Purchase Payments", and no vendor has been
+ * paid more than the bills recorded for them (a vendor id in the second kind of row).
+ */
+export function expenseDrift(db: Db) {
+  return db.$queryRaw<unknown[]>`
+    SELECT e.id FROM expenses e JOIN expense_categories c ON c.id = e.category_id
+    WHERE (lower(btrim(c.name)) = 'purchase payments') <> (e.vendor_party_id IS NOT NULL)
+    UNION ALL
+    SELECT p.vendor_party_id FROM (SELECT vendor_party_id, sum(amount) AS paid FROM expenses WHERE vendor_party_id IS NOT NULL GROUP BY 1) p
+    WHERE p.paid > coalesce((SELECT sum(net_amount) FROM purchases WHERE vendor_party_id = p.vendor_party_id), 0)`;
+}

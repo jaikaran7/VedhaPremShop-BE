@@ -12,7 +12,7 @@ Statuses: **Verified complete** · **Implemented, unverified** · **Partial** ·
 | Authentication | Verified complete | `modules/auth`, `test/auth.e2e.spec.ts` | Login, rotating refresh with reuse detection, logout, CSRF header, change password | — | — |
 | Authorization | Verified complete (RBAC + tenancy) | `common/auth`, e2e | Roles enforced server-side; other orgs get 404 | Postgres RLS **not implemented** (Phase 9, defence in depth) | RLS policies + test |
 | Customers | Verified complete | `modules/customers` | CRUD, credit terms by role, ledger, advance, safe delete | Search/pagination are client-side; fine at current size | — |
-| Suppliers (vendors) | Partial | `modules/vendors` | CRUD; **payable now derived from purchases** | No vendor payments (Q10); distributor link has no endpoints (D9) | Owner answers Q10 |
+| Suppliers (vendors) | Verified complete (core) | `modules/vendors` | CRUD; payable = bills − vendor payments | Advance / opening balance / returns (questions 1, 2, 4); distributor link has no endpoints (D9) | Owner answers |
 | Inventory / lots | Verified complete | `modules/inventory`, `stock-ledger.ts` | Lots derived from marks; atomic conditional stock change | — | — |
 | Stock movements | Verified complete | `StockMovement`, `reconciliation.ts` | Ledger + `stockDrift`; PURCHASE_IN now included | — | — |
 | New Sale | Verified complete (API) | `modules/sales`, `test/sales.e2e.spec.ts` | Server totals, idempotency, atomic stock, backdate approval, cancel/rebill | New FE parts (date picker, rebill mode, credit warning) are **typechecked only**, not browser-tested | Click-through of the five flows |
@@ -22,11 +22,11 @@ Statuses: **Verified complete** · **Implemented, unverified** · **Partial** ·
 | Purchases | **Verified complete (new)** | `modules/purchases/*`, `test/purchases.e2e.spec.ts` | Create bill, receive once, partial acceptance, rate snapshot, immutability, tenancy; **frontend draft/preview matches server on every field** | UI click-through of New Purchase and Receive Lot | Browser run |
 | Costing masters | **Verified complete (new)** | `modules/settings/costing.*` | Default margin, expense types, per-kg margins; Owner writes | — | — |
 | Dashboard / reports | Partial | `modules/reports` | `/reports` returns the six collections the Reports screen computes from; dashboards use list endpoints | Aggregation is client-side; snapshot capped at 5000 rows. SQL metrics (Phase 8) | Metric parity test |
-| Expenses / cash accounts | **Not implemented** | — | — | `/expenses`, `/expense-categories`, `/cash-accounts` 404; **the Collections screen depends on them** | See checkpoint |
-| Frontend integration | Partial | `src/api/*` | sales, payments, customers, vendors, lots, stock, purchases, approvals, costing, reports wired | expenses, cash accounts, `settings/reset` (demo only), `sales/:id/edit-requests` (superseded by rebill) | Screens load without 404 |
+| Expenses / cash accounts / vendor payments | **Verified complete (new, session 4)** | `modules/expenses/*`, `modules/vendors/payables.ts`, `test/expenses.e2e.spec.ts`, `test/business-flow.e2e.spec.ts` | Accounts, categories, immutable expenses; Purchase Payments name a vendor and reduce the payable (409 above what is owed, 10 parallel payments cannot overspend); Record Expense checked in a browser in mock mode | Real-API browser click-through; owner questions #1–#4, #11–#12 | Browser run against API |
+| Frontend integration | Mostly complete | `src/api/*` | sales, payments, customers, vendors, lots, stock, purchases, approvals, costing, reports, expenses, accounts wired | `settings/reset` (demo only), `sales/:id/edit-requests` (superseded by rebill) | Browser click-through in API mode |
 | Validation | Verified complete | DTOs | Bounds, decimals, UUIDs, whitelist | — | — |
 | Reliability | Verified complete | tests | Transactions, idempotency (sales, payments), row locks; 5 parallel sales and 10 parallel receives tested | Purchase create has no idempotency key (unique bill number guards it) | — |
-| Testing | Partial | 71 backend + 44 frontend tests | Unit + e2e on real Postgres | No browser/UI e2e, no load test, no prod-migration rehearsal | Phase 9 |
+| Testing | Partial | 80 backend + 44 frontend tests | Unit + e2e on real Postgres | No browser/UI e2e, no load test, no prod-migration rehearsal | Phase 9 |
 | Security | Partial | `docs/architecture/security-model.md` | Hashing, rotation, rate limits, RBAC, tenancy | RLS; two transitive advisories (multer, js-yaml) documented | Phase 9 |
 | Deployment | Not implemented | `docs/operations/deployment.md` | Documented only | No hosting chosen; CORS/cookie settings for cross-site not exercised | Staging deploy |
 | Documentation | Verified complete | `docs/` | Updated this session | — | — |
@@ -36,7 +36,7 @@ Statuses: **Verified complete** · **Implemented, unverified** · **Partial** ·
 | Command | Result |
 |---|---|
 | `npm run typecheck` · `npm run lint` (backend) | pass, no output |
-| `npm test` (backend, `--runInBand`, local Postgres 17 test DB) | **71 passed / 71**, 6 suites |
+| `npm test` (backend, `--runInBand`, local Postgres 17 test DB) | **80 passed / 80**, 8 suites (session 4) |
 | `npm run build` (backend) | no errors |
 | `npx tsc --noEmit` · `npm test` (frontend) | pass · **44 / 44** |
 | `prisma migrate deploy` on a scratch DB, then `migrate diff --exit-code` | applied; "No difference detected" |
