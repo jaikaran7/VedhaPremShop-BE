@@ -40,7 +40,10 @@ export async function createApp(env: Env, options: { logger?: false } = {}): Pro
 let starting: Promise<Express> | undefined;
 
 function httpServer(): Promise<Express> {
-  starting ??= createApp(loadEnv()).then((app) => app.getHttpAdapter().getInstance() as Express);
+  starting ??= createApp(loadEnv()).then(async (app) => {
+    await app.init();
+    return app.getHttpAdapter().getInstance() as Express;
+  });
   return starting;
 }
 
