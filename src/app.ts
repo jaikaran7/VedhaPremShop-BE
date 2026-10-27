@@ -2,11 +2,11 @@ import { ConsoleLogger, type INestApplication, ValidationPipe } from '@nestjs/co
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import cookieParser from 'cookie-parser';
-import { json } from 'express';
+import { json, type Express, type Request, type Response } from 'express';
 import { AppModule } from './app.module';
 import { isAllowedCorsOrigin } from './common/http/cors-origin';
 import { requestId } from './common/http/request-id.middleware';
-import type { Env } from './config/env';
+import { loadEnv, type Env } from './config/env';
 
 /** Shared by main.ts and the e2e tests so both run the exact same pipeline. */
 export async function createApp(env: Env, options: { logger?: false } = {}): Promise<INestApplication> {
@@ -35,4 +35,26 @@ export async function createApp(env: Env, options: { logger?: false } = {}): Pro
     SwaggerModule.setup('api/docs', app, doc);
   }
   return app;
+}
+
+let starting: Promise<Express> | undefined;
+
+function httpServer(): Promise<Express> {
+  starting ??= createApp(loadEnv()).then((app) => app.getHttpAdapter().getInstance() as Express);
+  return starting;
+}
+
+/** Vercel serves this file. The default export has to be the HTTP server. */
+export default function handler(req: Request, res: Response): void {
+  void httpServer()
+    .then((server) => {
+      server(req, res);
+    })
+    .catch((error: unknown) => {
+      console.error(error instanceof Error ? error.name : 'API failed to start');
+      if (res.headersSent) return;
+      res.statusCode = 500;
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ statusCode: 500, error: 'Internal Server Error', message: 'API failed to start' }));
+    });
 }
