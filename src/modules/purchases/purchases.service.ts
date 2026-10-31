@@ -113,35 +113,38 @@ export class PurchasesService {
   /** Records what is owed to the vendor. No stock moves until the consignment is received. Any bill date is accepted. */
   async create(actor: Actor, dto: CreatePurchaseDto) {
     if (dto.receiptStatus === 'RECEIVED') throw new BadRequestException('A new vendor bill cannot be created as received. Save it, then receive the lot.');
-    const id = await this.db.$transaction(async (tx) => {
-      const { vendorId, productId, bill } = await this.priceBill(tx, actor, dto);
-      const purchase = await tx.purchase.create({ data: {
-        organizationId: actor.organizationId,
-        billNumber: bill.billNumber,
-        vendorPartyId: vendorId,
-        productId,
-        purchaseDate: toDbDate(dto.date),
-        lotNumber: bill.lotNumber,
-        expectedArrivalDate: dto.expectedArrivalDate ? toDbDate(dto.expectedArrivalDate) : null,
-        grossAmount: fromPaise(bill.grossPaise),
-        totalExpenses: fromPaise(bill.expensePaise),
-        netAmount: fromPaise(bill.grossPaise + bill.expensePaise),
-        notes: dto.notes?.trim() || null,
-        createdByUserId: actor.userId,
-        createdByName: actor.name,
-        items: { create: bill.items.map((i) => itemRow(actor, i)) },
-        expenses: { create: bill.expenses.map((e) => expenseRow(actor, e)) },
-      } });
-      await audit(tx, actor, {
-        action: 'CREATE_PURCHASE', entity: 'PURCHASE', entityId: purchase.id,
-        details: `Vendor bill ${bill.billNumber} saved for ${purchase.lotNumber}: ${formatRupees(fromPaise(bill.grossPaise + bill.expensePaise))}. Awaiting physical receipt.`,
-      });
-      return purchase.id;
-    }, TX_OPTIONS).catch((error: unknown) => {
+    const id = await this.db.$transaction((tx) => this.createInTx(tx, actor, dto), TX_OPTIONS).catch((error: unknown) => {
       if (isUniqueViolation(error)) throw new ConflictException(`Bill ${dto.billNumber.trim()} is already recorded for this vendor.`);
       throw error;
     });
     return this.get(actor, id);
+  }
+
+  /** The vendor bill write, inside the caller's transaction (also used by a confirmed consignment scan). Returns the id. */
+  async createInTx(tx: Tx, actor: Actor, dto: CreatePurchaseDto): Promise<string> {
+    const { vendorId, productId, bill } = await this.priceBill(tx, actor, dto);
+    const purchase = await tx.purchase.create({ data: {
+      organizationId: actor.organizationId,
+      billNumber: bill.billNumber,
+      vendorPartyId: vendorId,
+      productId,
+      purchaseDate: toDbDate(dto.date),
+      lotNumber: bill.lotNumber,
+      expectedArrivalDate: dto.expectedArrivalDate ? toDbDate(dto.expectedArrivalDate) : null,
+      grossAmount: fromPaise(bill.grossPaise),
+      totalExpenses: fromPaise(bill.expensePaise),
+      netAmount: fromPaise(bill.grossPaise + bill.expensePaise),
+      notes: dto.notes?.trim() || null,
+      createdByUserId: actor.userId,
+      createdByName: actor.name,
+      items: { create: bill.items.map((i) => itemRow(actor, i)) },
+      expenses: { create: bill.expenses.map((e) => expenseRow(actor, e)) },
+    } });
+    await audit(tx, actor, {
+      action: 'CREATE_PURCHASE', entity: 'PURCHASE', entityId: purchase.id,
+      details: `Vendor bill ${bill.billNumber} saved for ${purchase.lotNumber}: ${formatRupees(fromPaise(bill.grossPaise + bill.expensePaise))}. Awaiting physical receipt.`,
+    });
+    return purchase.id;
   }
 
   /**
@@ -221,61 +224,64 @@ export class PurchasesService {
    * locked first, so a double click or a retry waits and then gets the already-received bill instead of posting twice.
    */
   async receive(actor: Actor, id: string, dto: ReceivePurchaseDto) {
-    await this.db.$transaction(async (tx) => {
-      const locked = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM purchases WHERE id = ${id}::uuid AND organization_id = ${actor.organizationId}::uuid FOR UPDATE`;
-      if (!locked[0]) throw new NotFoundException('Purchase not found');
-      const purchase = await tx.purchase.findUniqueOrThrow({ where: { id }, include: { items: true, vendorParty: { select: { name: true } } } });
-      if (purchase.receiptStatus === 'RECEIVED') return;
-
-      const evaluation = this.evaluate(purchase, dto, await loadCostingInputs(tx, actor.organizationId));
-      const accepted = evaluation.groups.flatMap((group) => {
-        const taken = takenInspectionQuantity(group);
-        return taken.bags > 0 && taken.weightKg > 0 ? [{ group, taken }] : [];
-      });
-      const today = businessDate(await orgTimezone(tx, actor.organizationId));
-      const lotId = accepted.length ? await this.lotFor(tx, actor, purchase, today) : null;
-      // One query for the marks already in the lot, instead of one lookup per quality.
-      const existingMarks = lotId
-        ? new Map((await tx.lotMark.findMany({ where: { lotId, markCode: { in: accepted.map((a) => a.group.markCode) } } })).map((m) => [m.markCode, m]))
-        : new Map();
-
-      for (const { group, taken } of accepted) {
-        const applied = appliedSellingRate(group);
-        const rates = {
-          finalizedSellingRate: applied,
-          calculatedSellingRate: group.calculatedFinalRate,
-          sellingRateOverride: group.revisedSellingRate,
-          sellingRateOverrideReason: group.revisedSellingRate != null ? group.overrideReason.trim() || null : null,
-        };
-        const existing = existingMarks.get(group.markCode);
-        // A mark already in the lot keeps its recorded purchase rate; a new mark takes this bill's rate.
-        const lotMark = existing
-          ? await tx.lotMark.update({ where: { id: existing.id }, data: rates })
-          : await tx.lotMark.create({ data: {
-            organizationId: actor.organizationId, lotId: lotId as string, markCode: group.markCode,
-            initialBags: 0, initialWeightKg: 0, remainingBags: 0, remainingWeightKg: 0, purchaseRate: group.originalPurchaseRate, ...rates,
-          } });
-        await applyStockChange(tx, actor, {
-          lotMarkId: lotMark.id, type: 'PURCHASE_IN', bagsDelta: taken.bags, gramsDelta: toGrams(taken.weightKg),
-          referenceType: 'PURCHASE', referenceId: purchase.id, reason: `Received ${purchase.lotNumber} from ${purchase.vendorParty.name}`,
-          movementDate: today, raisesInitial: true,
-        });
-      }
-
-      const receivedAt = new Date();
-      const totalBags = accepted.reduce((t, a) => t + a.taken.bags, 0);
-      await tx.purchase.update({ where: { id }, data: {
-        receiptStatus: 'RECEIVED',
-        receivedAt,
-        receivingDraft: Prisma.DbNull,
-        receivingRecord: { receivedAt: receivedAt.toISOString(), stockPosted: true, calculationVersion: 2, expenses: dto.expenses, groups: evaluation.groups, issues: evaluation.issues } as unknown as Prisma.InputJsonValue,
-      } });
-      await audit(tx, actor, {
-        action: 'RECEIVE_LOT', entity: 'PURCHASE', entityId: id,
-        details: `Received ${purchase.lotNumber}: ${totalBags} bags posted once, including accepted and defective`,
-      });
-    }, TX_OPTIONS);
+    await this.db.$transaction((tx) => this.receiveInTx(tx, actor, id, dto), TX_OPTIONS);
     return this.get(actor, id);
+  }
+
+  /** The receipt, inside the caller's transaction (also used by a confirmed consignment scan). */
+  async receiveInTx(tx: Tx, actor: Actor, id: string, dto: ReceivePurchaseDto): Promise<void> {
+    const locked = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM purchases WHERE id = ${id}::uuid AND organization_id = ${actor.organizationId}::uuid FOR UPDATE`;
+    if (!locked[0]) throw new NotFoundException('Purchase not found');
+    const purchase = await tx.purchase.findUniqueOrThrow({ where: { id }, include: { items: true, vendorParty: { select: { name: true } } } });
+    if (purchase.receiptStatus === 'RECEIVED') return;
+
+    const evaluation = this.evaluate(purchase, dto, await loadCostingInputs(tx, actor.organizationId));
+    const accepted = evaluation.groups.flatMap((group) => {
+      const taken = takenInspectionQuantity(group);
+      return taken.bags > 0 && taken.weightKg > 0 ? [{ group, taken }] : [];
+    });
+    const today = businessDate(await orgTimezone(tx, actor.organizationId));
+    const lotId = accepted.length ? await this.lotFor(tx, actor, purchase, today) : null;
+    // One query for the marks already in the lot, instead of one lookup per quality.
+    const existingMarks = lotId
+      ? new Map((await tx.lotMark.findMany({ where: { lotId, markCode: { in: accepted.map((a) => a.group.markCode) } } })).map((m) => [m.markCode, m]))
+      : new Map();
+
+    for (const { group, taken } of accepted) {
+      const applied = appliedSellingRate(group);
+      const rates = {
+        finalizedSellingRate: applied,
+        calculatedSellingRate: group.calculatedFinalRate,
+        sellingRateOverride: group.revisedSellingRate,
+        sellingRateOverrideReason: group.revisedSellingRate != null ? group.overrideReason.trim() || null : null,
+      };
+      const existing = existingMarks.get(group.markCode);
+      // A mark already in the lot keeps its recorded purchase rate; a new mark takes this bill's rate.
+      const lotMark = existing
+        ? await tx.lotMark.update({ where: { id: existing.id }, data: rates })
+        : await tx.lotMark.create({ data: {
+          organizationId: actor.organizationId, lotId: lotId as string, markCode: group.markCode,
+          initialBags: 0, initialWeightKg: 0, remainingBags: 0, remainingWeightKg: 0, purchaseRate: group.originalPurchaseRate, ...rates,
+        } });
+      await applyStockChange(tx, actor, {
+        lotMarkId: lotMark.id, type: 'PURCHASE_IN', bagsDelta: taken.bags, gramsDelta: toGrams(taken.weightKg),
+        referenceType: 'PURCHASE', referenceId: purchase.id, reason: `Received ${purchase.lotNumber} from ${purchase.vendorParty.name}`,
+        movementDate: today, raisesInitial: true,
+      });
+    }
+
+    const receivedAt = new Date();
+    const totalBags = accepted.reduce((t, a) => t + a.taken.bags, 0);
+    await tx.purchase.update({ where: { id }, data: {
+      receiptStatus: 'RECEIVED',
+      receivedAt,
+      receivingDraft: Prisma.DbNull,
+      receivingRecord: { receivedAt: receivedAt.toISOString(), stockPosted: true, calculationVersion: 2, expenses: dto.expenses, groups: evaluation.groups, issues: evaluation.issues } as unknown as Prisma.InputJsonValue,
+    } });
+    await audit(tx, actor, {
+      action: 'RECEIVE_LOT', entity: 'PURCHASE', entityId: id,
+      details: `Received ${purchase.lotNumber}: ${totalBags} bags posted once, including accepted and defective`,
+    });
   }
 
   /**

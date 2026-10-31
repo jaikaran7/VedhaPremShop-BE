@@ -183,3 +183,7 @@ Migrations so far: `…000000_init`, `…000100_integrity`, `…120000_purchases
 
 No per-day balance table exists on purpose: opening, closing and carry-forward are computed from `payments` and `expenses` (indexed by date), so a late,
 past-dated entry can never leave a stale stored balance.
+
+## AI consignment scanner (migration `20261031000000`)
+
+Nine `consignment_scan*` tables and `vendors.bill_rate_unit`; constraints and the frozen-scan trigger are listed in [scanner-database-design](scanner-database-design.md).

@@ -8,6 +8,20 @@ export interface Env {
   refreshTokenTtlDays: number;
   corsOrigins: string[];
   cookieCrossSite: boolean;
+  /** AI consignment scanner. An empty apiKey disables extraction (uploads and manual entry still work). */
+  gemini: {
+    apiKey: string;
+    printedBillModel: string;
+    handwritingModel: string;
+    escalationModel: string;
+    maxRetries: number;
+    timeoutMs: number;
+  };
+  /** Backup reader when Gemini fails: Groq's vision model. Empty apiKey disables the backup. */
+  groq: {
+    apiKey: string;
+    visionModel: string;
+  };
 }
 
 export const ENV = Symbol('ENV');
@@ -39,5 +53,22 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     refreshTokenTtlDays: int(source, 'REFRESH_TOKEN_TTL_DAYS', 30, 1, 90),
     corsOrigins,
     cookieCrossSite: source.COOKIE_CROSS_SITE === 'true',
+    gemini: {
+      apiKey: source.GEMINI_API_KEY?.trim() ?? '',
+      // Stable models (ai.google.dev/gemini-api/docs/models, 2026-10-31). flash-lite measured 100% on the reference bill and
+      // 98.6% on the mark sheet and works on a free-tier key; 3.8-flash needs a billed key. See docs/architecture/scanner-evaluation.md.
+      printedBillModel: source.GEMINI_PRINTED_BILL_MODEL?.trim() || 'gemini-3.5-flash-lite',
+      handwritingModel: source.GEMINI_HANDWRITING_MODEL?.trim() || 'gemini-3.5-flash-lite',
+      // Off by default: an escalation model the key cannot use does not refuse, it hangs until the timeout (measured 90 s).
+      escalationModel: source.GEMINI_ESCALATION_MODEL?.trim() ?? '',
+      maxRetries: int(source, 'AI_MAX_RETRIES', 2, 0, 5),
+      // A clean 2-page bill read takes 28–31 s; 45 s leaves room and lets a stuck call fall through to the next attempt.
+      timeoutMs: int(source, 'AI_REQUEST_TIMEOUT_MS', 45_000, 5_000, 300_000),
+    },
+    groq: {
+      apiKey: source.GROQ_API_KEY?.trim() ?? '',
+      // console.groq.com/docs/vision (2026-10-31): Groq's Qwen vision model, JSON-schema output, ≤ 3 images per request.
+      visionModel: source.GROQ_VISION_MODEL?.trim() || 'qwen/qwen3.8-27b',
+    },
   };
 }

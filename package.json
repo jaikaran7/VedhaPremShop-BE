@@ -19,9 +19,11 @@
     "prisma": "node --env-file-if-exists=.env node_modules/prisma/build/index.js",
     "postinstall": "prisma generate",
     "db:status": "node --env-file-if-exists=.env node_modules/prisma/build/index.js migrate status",
-    "db:wipe-ops": "tsx --env-file-if-exists=.env scripts/wipe-operational-data.ts"
+    "db:wipe-ops": "tsx --env-file-if-exists=.env scripts/wipe-operational-data.ts",
+    "scanner:eval": "tsx --env-file-if-exists=.env scripts/scanner-eval.ts"
   },
   "dependencies": {
+    "@google/genai": "2.29.1",
     "@nestjs/common": "^11.2.8",
     "@nestjs/core": "^11.2.8",
     "@nestjs/jwt": "^11.0.2",

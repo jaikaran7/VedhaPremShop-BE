@@ -6,3 +6,5 @@ dist
 coverage
 *.log
 src/generated
+# Real consignment photos (vendor bank details): kept on the machine only; this repo is public. See test/fixtures/consignment/reference.ts.
+test/fixtures/consignment/*.webp

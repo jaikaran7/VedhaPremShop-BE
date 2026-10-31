@@ -185,6 +185,7 @@ model Organization {
   ledgerEntries       CustomerLedgerEntry[]
   approvals           Approval[]
   auditLogs           AuditLog[]
+  consignmentScans    ConsignmentScan[]
 
   @@map("organizations")
 }
@@ -277,6 +278,7 @@ model Party {
   lotsSupplied       Lot[]
   purchases          Purchase[]
   vendorPayments     Expense[]
+  consignmentScans   ConsignmentScan[]
 
   @@index([organizationId])
   @@map("parties")
@@ -300,13 +302,15 @@ model Customer {
 }
 
 model Vendor {
-  partyId        String       @id @map("party_id") @db.Uuid
-  organizationId String       @map("organization_id") @db.Uuid
+  partyId        String        @id @map("party_id") @db.Uuid
+  organizationId String        @map("organization_id") @db.Uuid
   code           String
   /// Owed to the vendor before this system was used (negative = advance we had already paid). Paid off first.
-  openingBalance Decimal      @default(0) @map("opening_balance") @db.Decimal(14, 2)
-  status         MasterStatus @default(ACTIVE)
-  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  openingBalance Decimal       @default(0) @map("opening_balance") @db.Decimal(14, 2)
+  /// How this vendor's printed bill rates are quoted. Null until a confirmed scan or the owner sets it.
+  billRateUnit   BillRateUnit? @map("bill_rate_unit")
+  status         MasterStatus  @default(ACTIVE)
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
 
   party        Party        @relation(fields: [partyId], references: [id])
   organization Organization @relation(fields: [organizationId], references: [id])
@@ -323,10 +327,11 @@ model Product {
   status         MasterStatus @default(ACTIVE)
   createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  organization Organization @relation(fields: [organizationId], references: [id])
-  lots         Lot[]
-  sales        Sale[]
-  purchases    Purchase[]
+  organization     Organization      @relation(fields: [organizationId], references: [id])
+  lots             Lot[]
+  sales            Sale[]
+  purchases        Purchase[]
+  consignmentScans ConsignmentScan[]
 
   @@unique([organizationId, code])
   @@map("products")
@@ -656,16 +661,16 @@ enum ExpenseAmountBasis {
 
 /// Cost master. PURCHASE types are billed by the vendor (payable); STOCK_RECEIVING types are paid at arrival.
 model CostingExpenseType {
-  id             String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organizationId String             @map("organization_id") @db.Uuid
-  name           String
-  kind           CostingExpenseKind
+  id                String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId    String             @map("organization_id") @db.Uuid
+  name              String
+  kind              CostingExpenseKind
   /// FIXED_TOTAL is a pool. PER_BAG and PER_KG are rates for each eligible unit. Saved receipts keep their own copy.
   amountBasis       ExpenseAmountBasis @default(FIXED_TOTAL) @map("amount_basis")
   /// Default spread for a new receiving row. A per-bag type uses bags; a per-kg type uses kilograms.
   defaultAllocation String             @default("BY_RECEIVED_KG") @map("default_allocation")
-  status         MasterStatus       @default(ACTIVE)
-  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  status            MasterStatus       @default(ACTIVE)
+  createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
 
   organization Organization      @relation(fields: [organizationId], references: [id])
   expenses     PurchaseExpense[]
@@ -714,13 +719,14 @@ model Purchase {
   createdByName       String                @map("created_by_name")
   createdAt           DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  organization Organization       @relation(fields: [organizationId], references: [id])
-  vendorParty  Party              @relation(fields: [vendorPartyId], references: [id])
-  product      Product            @relation(fields: [productId], references: [id])
-  items        PurchaseItem[]
-  expenses     PurchaseExpense[]
-  lots         Lot[]
-  revisions    PurchaseRevision[]
+  organization     Organization       @relation(fields: [organizationId], references: [id])
+  vendorParty      Party              @relation(fields: [vendorPartyId], references: [id])
+  product          Product            @relation(fields: [productId], references: [id])
+  items            PurchaseItem[]
+  expenses         PurchaseExpense[]
+  lots             Lot[]
+  revisions        PurchaseRevision[]
+  consignmentScans ConsignmentScan[]
 
   @@unique([organizationId, vendorPartyId, billNumber])
   @@index([organizationId, purchaseDate])
@@ -826,9 +832,9 @@ model Expense {
   account      CashAccount     @relation(fields: [accountId], references: [id])
   vendorParty  Party?          @relation(fields: [vendorPartyId], references: [id])
 
+  @@unique([organizationId, receiptNumber])
   @@index([organizationId, expenseDate])
   @@index([vendorPartyId])
-  @@unique([organizationId, receiptNumber])
   @@map("expenses")
 }
 
@@ -854,4 +860,272 @@ model PurchaseRevision {
   @@unique([purchaseId, revisionNo])
   @@index([purchaseId])
   @@map("purchase_revisions")
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// AI consignment scanner (docs/architecture/ai-consignment-scanner.md). Everything is organization-scoped. Amounts are
+// integer paise, weights integer grams; AI output is kept raw (JSONB) next to the typed values a person reviews.
+
+enum BillRateUnit {
+  PER_KG
+  PER_10_KG
+  PER_BAG
+}
+
+enum ScanStatus {
+  DRAFT
+  PROCESSING
+  NEEDS_REVIEW
+  READY
+  FAILED
+  CONFIRMED
+}
+
+enum ScanDocumentKind {
+  VENDOR_BILL
+  MARK_SHEET
+}
+
+enum ScanRunStatus {
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
+enum ScanConfidence {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum ScanExpenseCategory {
+  HAMALI
+  MARKET_FEE
+  COMMISSION
+  LEVY
+  DRIVER_ADVANCE
+  FREIGHT
+  OTHER
+}
+
+enum ScanIssueSeverity {
+  CRITICAL
+  WARNING
+  INFO
+}
+
+/// One consignment being scanned: uploaded documents, AI runs, the editable draft and, once confirmed, the purchase.
+model ConsignmentScan {
+  id                   String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId       String        @map("organization_id") @db.Uuid
+  status               ScanStatus    @default(DRAFT)
+  /// Optimistic-concurrency version of the draft; every save increments it.
+  version              Int           @default(1)
+  vendorPartyId        String?       @map("vendor_party_id") @db.Uuid
+  productId            String?       @map("product_id") @db.Uuid
+  lotNumber            String?       @map("lot_number")
+  rateUnit             BillRateUnit? @map("rate_unit")
+  billNumber           String?       @map("bill_number")
+  billDate             DateTime?     @map("bill_date") @db.Date
+  sheetDate            DateTime?     @map("sheet_date") @db.Date
+  vendorNameText       String?       @map("vendor_name_text")
+  buyerNameText        String?       @map("buyer_name_text")
+  lotRefText           String?       @map("lot_ref_text")
+  printedBillBags      Int?          @map("printed_bill_bags")
+  printedBillGrams     BigInt?       @map("printed_bill_grams")
+  printedGrossPaise    BigInt?       @map("printed_gross_paise")
+  printedExpensesPaise BigInt?       @map("printed_expenses_paise")
+  printedNetPaise      BigInt?       @map("printed_net_paise")
+  printedSheetBags     Int?          @map("printed_sheet_bags")
+  /// Raw text, confidence and source of each header value as the AI read it.
+  headerEvidence       Json?         @map("header_evidence")
+  /// Last reconciliation result (summary, per-mark rows, suggestions) — recomputed on every save.
+  reconciliation       Json?
+  purchaseId           String?       @unique @map("purchase_id") @db.Uuid
+  confirmKey           String?       @map("confirm_key")
+  createdByUserId      String?       @map("created_by_user_id") @db.Uuid
+  createdByName        String        @map("created_by_name")
+  confirmedByName      String?       @map("confirmed_by_name")
+  confirmedAt          DateTime?     @map("confirmed_at") @db.Timestamptz(6)
+  createdAt            DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization              @relation(fields: [organizationId], references: [id])
+  vendorParty  Party?                    @relation(fields: [vendorPartyId], references: [id])
+  product      Product?                  @relation(fields: [productId], references: [id])
+  purchase     Purchase?                 @relation(fields: [purchaseId], references: [id])
+  documents    ConsignmentScanDocument[]
+  runs         ConsignmentScanRun[]
+  billLines    ConsignmentScanBillLine[]
+  expenses     ConsignmentScanExpense[]
+  marks        ConsignmentScanMark[]
+  issues       ConsignmentScanIssue[]
+  versions     ConsignmentScanVersion[]
+
+  @@unique([organizationId, confirmKey])
+  @@index([organizationId, createdAt])
+  @@map("consignment_scans")
+}
+
+/// One uploaded file (a photo is one page). The bytes live in consignment_scan_files so lists never load them.
+model ConsignmentScanDocument {
+  id             String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String           @map("organization_id") @db.Uuid
+  scanId         String           @map("scan_id") @db.Uuid
+  kind           ScanDocumentKind
+  /// Order within its kind: bill page 1, page 2, …
+  pageNo         Int              @map("page_no")
+  fileName       String           @map("file_name")
+  mimeType       String           @map("mime_type")
+  sizeBytes      Int              @map("size_bytes")
+  sha256         String
+  uploadedByName String           @map("uploaded_by_name")
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  scan ConsignmentScan      @relation(fields: [scanId], references: [id], onDelete: Cascade)
+  file ConsignmentScanFile?
+
+  @@unique([scanId, sha256])
+  @@index([scanId])
+  @@map("consignment_scan_documents")
+}
+
+/// shortcut: file bytes in Postgres (private, transactional, no new infrastructure); move to a private object store when volume grows.
+model ConsignmentScanFile {
+  documentId String @id @map("document_id") @db.Uuid
+  content    Bytes
+
+  document ConsignmentScanDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@map("consignment_scan_files")
+}
+
+/// One AI extraction job (vendor bill or mark sheet): model, prompt version, tokens, timing and the raw response.
+model ConsignmentScanRun {
+  id             String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String           @map("organization_id") @db.Uuid
+  scanId         String           @map("scan_id") @db.Uuid
+  job            ScanDocumentKind
+  status         ScanRunStatus    @default(RUNNING)
+  stage          String           @default("QUEUED")
+  model          String
+  promptVersion  String           @map("prompt_version")
+  attempts       Int              @default(0)
+  inputTokens    Int?             @map("input_tokens")
+  outputTokens   Int?             @map("output_tokens")
+  latencyMs      Int?             @map("latency_ms")
+  error          String?
+  rawResponse    Json?            @map("raw_response")
+  startedAt      DateTime         @default(now()) @map("started_at") @db.Timestamptz(6)
+  finishedAt     DateTime?        @map("finished_at") @db.Timestamptz(6)
+
+  scan ConsignmentScan @relation(fields: [scanId], references: [id], onDelete: Cascade)
+
+  @@index([scanId, startedAt])
+  @@map("consignment_scan_runs")
+}
+
+/// A vendor bill line. Rate is as printed (paise of the printed number); its unit is the scan's rate_unit.
+model ConsignmentScanBillLine {
+  id             String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String         @map("organization_id") @db.Uuid
+  scanId         String         @map("scan_id") @db.Uuid
+  position       Int
+  itemName       String         @default("") @map("item_name")
+  bags           Int
+  grams          BigInt
+  ratePaise      BigInt         @map("rate_paise")
+  amountPaise    BigInt         @map("amount_paise")
+  sourcePage     Int?           @map("source_page")
+  sourceRow      Int?           @map("source_row")
+  confidence     ScanConfidence @default(HIGH)
+  /// AI raw text per field: { bags, weight, rate, amount }.
+  rawText        Json?          @map("raw_text")
+  /// AI, or MANUAL for a line a person added.
+  origin         String         @default("AI")
+  corrected      Boolean        @default(false)
+  /// A person's mark assignment; automatic matches are recomputed and live in reconciliation.
+  assignedMarkId String?        @map("assigned_mark_id") @db.Uuid
+
+  scan ConsignmentScan @relation(fields: [scanId], references: [id], onDelete: Cascade)
+
+  @@index([scanId])
+  @@map("consignment_scan_bill_lines")
+}
+
+model ConsignmentScanExpense {
+  id             String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String              @map("organization_id") @db.Uuid
+  scanId         String              @map("scan_id") @db.Uuid
+  position       Int
+  label          String
+  category       ScanExpenseCategory
+  amountPaise    BigInt              @map("amount_paise")
+  /// Added to the lot's landed cost at receiving. Driver advance defaults to false.
+  includeInCost  Boolean             @default(true) @map("include_in_cost")
+  confidence     ScanConfidence      @default(HIGH)
+  rawText        String?             @map("raw_text")
+  origin         String              @default("AI")
+  corrected      Boolean             @default(false)
+
+  scan ConsignmentScan @relation(fields: [scanId], references: [id], onDelete: Cascade)
+
+  @@index([scanId])
+  @@map("consignment_scan_expenses")
+}
+
+/// A handwritten mark-sheet row: bags, a rate or a rate range, and the mark (quality) code.
+model ConsignmentScanMark {
+  id             String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String         @map("organization_id") @db.Uuid
+  scanId         String         @map("scan_id") @db.Uuid
+  position       Int
+  markCode       String         @map("mark_code")
+  bags           Int
+  rateMinPaise   BigInt         @map("rate_min_paise")
+  rateMaxPaise   BigInt         @map("rate_max_paise")
+  sourcePage     Int?           @map("source_page")
+  sourceRow      Int?           @map("source_row")
+  confidence     ScanConfidence @default(HIGH)
+  rawText        Json?          @map("raw_text")
+  origin         String         @default("AI")
+  corrected      Boolean        @default(false)
+
+  scan ConsignmentScan @relation(fields: [scanId], references: [id], onDelete: Cascade)
+
+  @@index([scanId])
+  @@map("consignment_scan_marks")
+}
+
+/// The current reconciliation issues; replaced on every recalculation.
+model ConsignmentScanIssue {
+  id             String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String            @map("organization_id") @db.Uuid
+  scanId         String            @map("scan_id") @db.Uuid
+  code           String
+  severity       ScanIssueSeverity
+  message        String
+  refs           Json?
+
+  scan ConsignmentScan @relation(fields: [scanId], references: [id], onDelete: Cascade)
+
+  @@index([scanId])
+  @@map("consignment_scan_issues")
+}
+
+/// Every saved draft: who, why and the full editable state, so corrections are never lost.
+model ConsignmentScanVersion {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  scanId         String   @map("scan_id") @db.Uuid
+  version        Int
+  reason         String
+  editedByName   String   @map("edited_by_name")
+  snapshot       Json
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  scan ConsignmentScan @relation(fields: [scanId], references: [id], onDelete: Cascade)
+
+  @@unique([scanId, version])
+  @@map("consignment_scan_versions")
 }

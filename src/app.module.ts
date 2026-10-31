@@ -11,6 +11,7 @@ import { DbModule } from './database/prisma.service';
 import { HealthController } from './health/health.controller';
 import { AuditModule } from './modules/audit/audit.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { ConsignmentScansModule } from './modules/consignment-scans/consignment-scans.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { ExpensesModule } from './modules/expenses/expenses.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
@@ -34,7 +35,7 @@ export class AppModule {
         ThrottlerModule.forRoot({ throttlers: [{ ttl: 60_000, limit: 300 }], skipIf: () => env.nodeEnv === 'test' }),
         DbModule,
         CacheModule,
-        AuthModule, UsersModule, SettingsModule, CustomersModule, VendorsModule, InventoryModule, ExpensesModule, PurchasesModule, SalesModule, PaymentsModule, ReportsModule, AuditModule,
+        AuthModule, UsersModule, SettingsModule, CustomersModule, VendorsModule, InventoryModule, ExpensesModule, PurchasesModule, SalesModule, PaymentsModule, ReportsModule, AuditModule, ConsignmentScansModule,
       ],
       controllers: [HealthController],
       providers: [

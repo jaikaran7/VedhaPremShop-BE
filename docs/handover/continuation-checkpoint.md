@@ -4,7 +4,29 @@ Read this first. It links to the other handover documents instead of repeating t
 [project-history](project-history.md) · [business-rules-and-decisions](business-rules-and-decisions.md) ·
 [implementation-status](implementation-status.md) · [requirements-reconciliation](requirements-reconciliation.md).
 
-## Where things stand (2026-10-26, end of session 5)
+## Latest: AI consignment scanner (2026-10-31)
+
+- **Built and verified:** Purchases → Scan Consignment. Upload bill pages + mark sheet → two parallel Gemini runs →
+  deterministic reconciliation → review/correct → Owner confirm (one transaction through `PurchasesService.createInTx` /
+  `receiveInTx`, idempotent). Start at [ai-consignment-scanner](../architecture/ai-consignment-scanner.md).
+- Backend **223** tests (12 reconciliation + 7 upload-validation unit, 8 scanner e2e with Gemini mocked), lint/typecheck/build clean.
+- **Real Gemini measured** (`npm run scanner:eval`, key in `.env`): `gemini-3.5-flash-lite` 100% on the 53-line bill, 98.6% on
+  the mark sheet (EG→EB). `gemini-3.8-flash` / `gemini-4-argon` have 0 free-tier quota on this key → defaults are flash-lite.
+- Browser click-through done on a **local throwaway DB** (`vedhaprem_ui_test`, launch config `api-local-ui-test`): upload,
+  failed read without key, review, accept suggestions, save, confirm → purchase with 513 bags; and a real-Gemini read.
+- **Neon dev migrated** (`20261031000000_consignment_scanner`); no scans or purchases were written to dev. Production untouched.
+- **Follow-up (same day):** phone camera **Scan** + bulk **Upload** + drag-and-drop on each document box (browser-verified:
+  4 dropped files → 3 added, 1 refused, rest continued; phone width fixed). **Groq Qwen backup** (`qwen/qwen3.8-27b`) after
+  Gemini fails — tested with Groq mocked (10 scanner e2e). Live: this Groq key's tier allows 1,000 output tokens/min, below
+  one bill (~12k), so the backup cannot read real documents until the Groq plan is upgraded.
+- **Performance (same day):** ~30 s per scan (bill and sheet in parallel; all pages of a document in one AI request);
+  bill 100%, sheet 98.2% — see [scanner-evaluation](../architecture/scanner-evaluation.md). Escalation now off by default
+  and AI timeout 45 s, after 90 s hangs on a model the key cannot use.
+- **Not committed.** Owner questions 8–10 (paise rounding, landed-cost defaults, EG/EB) in [questions-for-owner](questions-for-owner.md).
+- Found, not fixed (pre-existing): CORS `allowedHeaders` lacks `Authorization`, so a browser that keeps a Bearer token
+  cross-origin (FE :3000 → API :4000) is blocked after login.
+
+## Where things stood (2026-10-26, end of session 5)
 
 - **Done and verified:** everything in earlier sessions plus the owner's session-5 decisions: vendor opening balance / previous due / new due /
   advance / account statement; vendor bill corrections with previous→current history (staff can correct); optional charges; any-date vendor

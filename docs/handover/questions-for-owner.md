@@ -62,3 +62,17 @@ A bill can be corrected but not deleted (money history is never deleted). If a b
 right values. Do you also want a "Cancel bill" for an unreceived vendor bill, and a "Return to vendor" for goods sent back after receiving?
 
 **7. The Manager does not see account balances either.** Only the Owner does, as you said. The Manager still sees expenses, collections and vendor accounts.
+
+## Part 3 — AI consignment scanner (2026-10-31)
+
+**8. Paise on scanned vendor bills.** Purchase lines are rounded to whole rupees (the same rule as sales). The reference bill
+00045 has four lines with paise (82175.20, 39115.50, 130073.50, 4849.50), so the recorded amount owed is ₹1,142,250.30 —
+₹1.30 more than the vendor's ₹1,142,249.00. Should purchase lines keep the vendor's exact paise instead? (The scanner shows
+the difference and asks nothing else until you decide.)
+
+**9. Which bill charges belong in a lot's landed cost?** Every charge on the bill is owed to the vendor. On a scan, Hamali,
+M/Ses, Commission and Levy are also *added to the lot's cost* (spread by weight) by default; Driver Advance is not. Each can
+be ticked or unticked per scan. Is that the right default?
+
+**10. "EG" or "EB"?** On the reference mark sheet (KA56 3515) the last right-hand mark (5 bags @ 300) was transcribed as EG;
+the AI read EB. Which is it? (It only matters for the test data.)
