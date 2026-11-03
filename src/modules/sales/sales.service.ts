@@ -7,7 +7,7 @@ import { isUniqueViolation } from '../../common/pg-error';
 import { PrismaService, TX_OPTIONS, type Tx } from '../../database/prisma.service';
 import type { Prisma } from '../../generated/prisma/client';
 import { settleCustomer } from '../payments/receivables';
-import { cancelBill, COUNTER_SALE, insertBill, loadCustomer, postBillFinancials, type BillCustomer } from './billing';
+import { cancelBill, COUNTER_SALE, insertBill, loadCustomer, postBillFinancials, reviseSale, type BillCustomer } from './billing';
 import { paymentStatusFor, priceBill } from './sales.calc';
 import { sameSaleLines, summarizeExistingSale } from './sale-match';
 import type { CreateSaleDto, SalesQueryDto } from './sales.dto';
@@ -67,7 +67,7 @@ export class SalesService {
     return { status: 'APPLIED', sale: await this.get(actor, saleId) };
   }
 
-  /** Edit = cancel and rebill in one step. Owner applies directly; anyone else files a request. */
+  /** Edit = update the same bill. Owner applies directly; anyone else files a request. */
   async requestRebill(actor: Actor, saleId: string, dto: CreateSaleDto, reason: string): Promise<ChangeResult> {
     if (actor.role !== 'OWNER') {
       // The edited bill keeps the original bill's date, so the request carries no date of its own.
@@ -86,32 +86,20 @@ export class SalesService {
   }
 
   /**
-   * Replaces a bill: the old one is cancelled (stock back, receipts released) and the new one is posted on the
-   * old bill's date (stock taken again, released money applied to it first). Returns the new bill id.
+   * Edits a confirmed bill in place: same id, number, date and customer. Stock and the balance move together,
+   * and the previous items stay on a revision. Returns the same bill id.
    */
   async executeRebill(tx: Tx, actor: Actor, saleId: string, dto: CreateSaleDto, reason: string, approver?: string): Promise<string> {
     const org = await tx.organization.findUniqueOrThrow({ where: { id: actor.organizationId } });
-    const old = await tx.sale.findFirst({ where: { id: saleId, organizationId: actor.organizationId } });
-    if (!old) throw new NotFoundException('Sale not found');
-    const customer = await loadCustomer(tx, actor, dto.customerId || null);
-    const otherCustomer = old.customerPartyId && old.customerPartyId !== customer?.partyId ? old.customerPartyId : null;
-    if (otherCustomer) await loadCustomer(tx, actor, otherCustomer);
-
-    // Customer money released by the old bill is that customer's credit and is applied by settleCustomer.
-    // Counter money moves to the new counter bill; if the bill now belongs to a customer it is refunded instead.
-    const { released: carried } = await cancelBill(tx, actor, org, saleId, `rebilled: ${reason}`, businessDate(org.timezone), { keepCounterMoney: !customer });
-    const saleDate = fromDbDate(old.saleDate);
-    const bill = await insertBill(tx, actor, org, dto, {
-      customer, saleDate, status: 'CONFIRMED', replacesSaleId: saleId, carriedPaise: carried.reduce((s, r) => s + r.amountPaise, 0),
-    });
-    await postBillFinancials(tx, actor, org, { ...bill, saleDate, customer, carried, description: await describe(tx, bill.saleId) });
-    if (otherCustomer) await settleCustomer(tx, actor, otherCustomer);
-    await tx.sale.update({ where: { id: saleId }, data: { cancelReason: `Rebilled as ${bill.billNumber}: ${reason}` } });
-    await audit(tx, actor, {
-      action: 'REBILL_SALE', entity: 'SALE', entityId: bill.saleId, approver,
-      details: `${old.billNumber} replaced by ${bill.billNumber} (${formatRupees(fromPaise(bill.totalPaise))}): ${reason}`,
-    });
-    return bill.saleId;
+    const changed = await reviseSale(tx, actor, org, saleId, dto, reason);
+    if (changed) {
+      const sale = await tx.sale.findUniqueOrThrow({ where: { id: saleId }, select: { billNumber: true, totalAmount: true } });
+      await audit(tx, actor, {
+        action: 'REBILL_SALE', entity: 'SALE', entityId: saleId, approver,
+        details: `${sale.billNumber} edited to ${formatRupees(Number(sale.totalAmount))}: ${reason}`,
+      });
+    }
+    return saleId;
   }
 
   async noteCorrection(actor: Actor, saleId: string, note: string): Promise<void> {
@@ -122,7 +110,55 @@ export class SalesService {
   async get(actor: Actor, id: string) {
     const [sale] = await this.list(actor, { limit: 1, offset: 0 }, id);
     if (!sale) throw new NotFoundException('Sale not found');
-    return sale;
+    const revisions = await this.db.saleRevision.findMany({
+      where: { saleId: id, organizationId: actor.organizationId },
+      orderBy: { revisionNo: 'desc' },
+    });
+    return {
+      ...sale,
+      revisions: revisions.map((revision) => revisionView(revision)),
+    };
+  }
+
+  /** Bills that have been corrected, newest edit first, with every previous → current change. */
+  async listEdits(actor: Actor, query: Pick<SalesQueryDto, 'limit' | 'offset'>) {
+    const groups = await this.db.saleRevision.groupBy({
+      by: ['saleId'],
+      where: { organizationId: actor.organizationId },
+      _count: { _all: true },
+      _max: { createdAt: true },
+      orderBy: { _max: { createdAt: 'desc' } },
+      take: query.limit,
+      skip: query.offset,
+    });
+    if (groups.length === 0) return [];
+    const sales = await this.db.sale.findMany({
+      where: { organizationId: actor.organizationId, id: { in: groups.map((group) => group.saleId) } },
+      select: {
+        id: true, billNumber: true, customerName: true, saleDate: true, totalBags: true, totalWeightKg: true, totalAmount: true, status: true,
+        revisions: {
+          orderBy: { revisionNo: 'desc' },
+          select: { id: true, revisionNo: true, editedByName: true, editedByRole: true, reason: true, changes: true, before: true, after: true, createdAt: true },
+        },
+      },
+    });
+    const byId = new Map(sales.map((sale) => [sale.id, sale]));
+    return groups.flatMap((group) => {
+      const sale = byId.get(group.saleId);
+      if (!sale) return [];
+      return [{
+        id: sale.id,
+        billNumber: sale.billNumber,
+        customerName: sale.customerName,
+        date: fromDbDate(sale.saleDate),
+        totalBags: sale.totalBags,
+        totalWeightKg: Number(sale.totalWeightKg),
+        totalAmount: Number(sale.totalAmount),
+        status: sale.status,
+        revisionCount: group._count._all,
+        revisions: sale.revisions.map((revision) => revisionView(revision)),
+      }];
+    });
   }
 
   /** Bills with lines, counter receipts and live paid amount (Σ allocations), in a fixed number of queries. */
@@ -284,6 +320,30 @@ export class SalesService {
     }, TX_OPTIONS);
     return { status: 'PENDING_APPROVAL', approvalId };
   }
+}
+
+function revisionView(revision: {
+  id: string;
+  revisionNo: number;
+  editedByName: string;
+  editedByRole: string;
+  reason: string;
+  changes: Prisma.JsonValue;
+  before: Prisma.JsonValue;
+  after: Prisma.JsonValue;
+  createdAt: Date;
+}) {
+  return {
+    id: revision.id,
+    revisionNo: revision.revisionNo,
+    editedBy: revision.editedByName,
+    editedByRole: revision.editedByRole,
+    reason: revision.reason,
+    changes: revision.changes,
+    before: revision.before,
+    after: revision.after,
+    createdAt: revision.createdAt.toISOString(),
+  };
 }
 
 /** " dated 2026-10-24 (entered 2026-10-26): reason" for a bill on another day; nothing for today's bills. */

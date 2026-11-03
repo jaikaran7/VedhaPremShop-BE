@@ -7,6 +7,7 @@ const OPERATIONAL_TABLES = [
   'payments',
   'customer_ledger_entries',
   'sale_items',
+  'sale_revisions',
   'sales',
   'purchase_revisions',
   'purchase_expenses',

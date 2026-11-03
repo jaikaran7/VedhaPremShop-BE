@@ -185,6 +185,7 @@ model Organization {
   ledgerEntries       CustomerLedgerEntry[]
   approvals           Approval[]
   auditLogs           AuditLog[]
+  saleRevisions       SaleRevision[]
   consignmentScans    ConsignmentScan[]
 
   @@map("organizations")
@@ -487,6 +488,7 @@ model Sale {
   allocations   PaymentAllocation[]
   ledgerEntries CustomerLedgerEntry[]
   approvals     Approval[]
+  revisions     SaleRevision[]
 
   @@unique([organizationId, billNumber])
   @@unique([organizationId, idempotencyKey])
@@ -600,6 +602,30 @@ model CustomerLedgerEntry {
   @@index([customerPartyId, entryDate, createdAt])
   @@index([organizationId])
   @@map("customer_ledger_entries")
+}
+
+/// One correction of a sales bill. The bill keeps its id; this row keeps the items and amounts before and after. Append-only.
+model SaleRevision {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  saleId         String   @map("sale_id") @db.Uuid
+  revisionNo     Int      @map("revision_no")
+  editedByUserId String   @map("edited_by_user_id") @db.Uuid
+  editedByName   String   @map("edited_by_name")
+  editedByRole   UserRole @map("edited_by_role")
+  reason         String
+  /// [{ field, label, from, to }]
+  changes        Json
+  before         Json
+  after          Json
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  sale         Sale         @relation(fields: [saleId], references: [id])
+
+  @@unique([saleId, revisionNo])
+  @@index([saleId])
+  @@map("sale_revisions")
 }
 
 /// Changes only the Owner may approve: backdated bills, cancellations and rebills requested by staff.

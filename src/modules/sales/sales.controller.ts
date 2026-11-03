@@ -2,6 +2,7 @@ import { BadRequestException, Body, Controller, Get, Headers, HttpCode, Param, P
 import { ApiHeader, ApiTags } from '@nestjs/swagger';
 import { type Actor, CurrentActor, Roles } from '../../common/auth/actor';
 import { ApprovalsService } from './approvals.service';
+import { ListQueryDto } from '../../common/http/list-query.dto';
 import { CancelSaleDto, CreateSaleDto, IDEMPOTENCY_KEY, ProcessApprovalDto, RebillSaleDto, SaleNoteDto, SalesQueryDto } from './sales.dto';
 import { SalesService } from './sales.service';
 import { ApiEndpoint, ApiStandardErrors } from '../../common/http/swagger';
@@ -20,7 +21,11 @@ export class SalesController {
 
   @ApiEndpoint('List sales bills', 'Newest first, optionally limited to a from/to date range. Use limit and offset to page.')
   @Get() list(@CurrentActor() a: Actor, @Query() q: SalesQueryDto) { return this.sales.list(a, q); }
-  @ApiEndpoint('Get a sales bill', 'One bill with its lines and payments.')
+
+  @ApiEndpoint('List edited bills', 'Bills that have been corrected, newest edit first. Each bill includes every previous value and what it became.')
+  @Get('edits') listEdits(@CurrentActor() a: Actor, @Query() q: ListQueryDto) { return this.sales.listEdits(a, q); }
+
+  @ApiEndpoint('Get a sales bill', 'One bill with its lines, payments and edit history.')
   @Get(':id') get(@CurrentActor() a: Actor, @Param('id', ParseUUIDPipe) id: string) { return this.sales.get(a, id); }
 
   @ApiEndpoint('Create a sales bill', 'Posts stock, balance and any payment for the bill date. Past dates are allowed for any staff member. Send an Idempotency-Key header to make retries safe.', 201)
@@ -38,8 +43,8 @@ export class SalesController {
     return this.sales.requestCancel(a, id, dto.reason.trim());
   }
 
-  /** Edit a bill: same body as a new bill plus a reason. Owner: applied now. Others: a request for the Owner. */
-  @ApiEndpoint('Edit a sales bill', 'Cancel and re-bill with a reason. Owner: applied now. Others: a request in the Owner\'s approval queue.')
+  /** Edit a bill in place. Owner: applied now. Others: a request for the Owner. The bill id does not change. */
+  @ApiEndpoint('Edit a sales bill', 'Updates the same bill. Owner: applied now, stock and the balance move together. Others: a request in the Owner\'s approval queue. The previous items are kept in the edit history.')
   @Post(':id/rebill')
   @HttpCode(200)
   rebill(@CurrentActor() a: Actor, @Param('id', ParseUUIDPipe) id: string, @Body() dto: RebillSaleDto) {

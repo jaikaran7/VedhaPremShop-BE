@@ -14,7 +14,7 @@ import { describe, SalesService } from './sales.service';
 const TYPE_LABEL: Record<Approval['type'], string> = {
   BACKDATED_SALE: 'Bill dated another day',
   SALE_CANCEL: 'Cancel bill',
-  SALE_REBILL: 'Edit bill (cancel & rebill)',
+  SALE_REBILL: 'Edit bill',
 };
 
 /**
