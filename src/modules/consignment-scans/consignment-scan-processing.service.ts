@@ -21,6 +21,18 @@ const whole = (f: Field<number>) => Math.round(f.value ?? 0);
 const isoOrNull = (f: Field<string>) => (f.value && isIsoDate(f.value) ? f.value : null);
 const optionalBig = (f: Field<number>, scale: (v: number) => number) => (f.value === null ? null : BigInt(scale(f.value)));
 
+interface ClaimedDocument {
+  id: string;
+  fileName: string;
+  mimeType: string;
+}
+
+interface ClaimedJob {
+  kind: ExtractionJob;
+  runId: string;
+  documents: ClaimedDocument[];
+}
+
 /** Reads the uploaded documents with AI: the bill and the mark sheet as two jobs in parallel, each recorded as a run. */
 @Injectable()
 export class ConsignmentScanProcessingService {
@@ -68,31 +80,48 @@ export class ConsignmentScanProcessingService {
     }, TX_OPTIONS);
   }
 
-  /** Claims the scan (one reader at a time) and creates one run per document kind present. */
+  /**
+   * Claims the scan (one reader at a time) and creates one run per document kind present.
+   * File bytes stay out of this transaction: a photographed bill is large enough that reading it from
+   * the database can outlast the 20s transaction, and the AI call happens only after the claim commits.
+   */
   private async start(actor: Actor, id: string): Promise<{ kind: ExtractionJob; runId: string; pages: ExtractionPage[] }[]> {
+    const claimed = await this.claim(actor, id);
+    const files = await this.db.consignmentScanFile.findMany({ where: { documentId: { in: claimed.flatMap((job) => job.documents.map((doc) => doc.id)) } } });
+    const content = new Map(files.map((file) => [file.documentId, file.content]));
+    return claimed.map((job) => ({
+      kind: job.kind,
+      runId: job.runId,
+      pages: job.documents.map((doc, index) => this.page(doc, index, content.get(doc.id))),
+    }));
+  }
+
+  private async claim(actor: Actor, id: string): Promise<ClaimedJob[]> {
     return this.db.$transaction(async (tx) => {
       const scan = await lockScan(tx, actor, id);
       if (scan.status === 'CONFIRMED') throw new ConflictException('This scan is already confirmed.');
       if (scan.status === 'PROCESSING' && Date.now() - scan.updatedAt.getTime() < this.staleAfterMs) throw new ConflictException('The documents are already being read.');
-      const docs = await tx.consignmentScanDocument.findMany({ where: { scanId: id }, orderBy: [{ kind: 'asc' }, { pageNo: 'asc' }], include: { file: true } });
+      const docs = await tx.consignmentScanDocument.findMany({ where: { scanId: id }, orderBy: [{ kind: 'asc' }, { pageNo: 'asc' }] });
       if (docs.length === 0) throw new UnprocessableEntityException('Upload the vendor bill and the mark sheet first.');
       await tx.consignmentScan.update({ where: { id }, data: { status: 'PROCESSING' } });
-      const jobs: { kind: ExtractionJob; runId: string; pages: ExtractionPage[] }[] = [];
+      const jobs: ClaimedJob[] = [];
       for (const kind of new Set(docs.map((d) => d.kind))) {
-        const pages = docs.filter((d) => d.kind === kind).map((d, i): ExtractionPage => {
-          const content = Buffer.from(d.file?.content ?? new Uint8Array());
-          const office = d.mimeType === DOCX || d.mimeType === XLSX;
-          return { pageNo: i + 1, fileName: d.fileName, mimeType: d.mimeType, ...(office ? { text: officeText(content, d.mimeType as ScanFileType) } : { data: content }) };
-        });
+        const documents = docs.filter((d) => d.kind === kind).map((d) => ({ id: d.id, fileName: d.fileName, mimeType: d.mimeType }));
         const model = kind === 'VENDOR_BILL' ? this.env.gemini.printedBillModel : this.env.gemini.handwritingModel;
         const run = await tx.consignmentScanRun.create({ data: { organizationId: actor.organizationId, scanId: id, job: kind, model, promptVersion: PROMPT_VERSION, stage: 'READING' } });
-        jobs.push({ kind, runId: run.id, pages });
+        jobs.push({ kind, runId: run.id, documents });
       }
       return jobs;
     }, TX_OPTIONS).catch((error: unknown) => {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') throw new NotFoundException('Scan not found');
       throw error;
     });
+  }
+
+  private page(doc: ClaimedDocument, index: number, content: Uint8Array | undefined): ExtractionPage {
+    const bytes = Buffer.from(content ?? new Uint8Array());
+    const office = doc.mimeType === DOCX || doc.mimeType === XLSX;
+    return { pageNo: index + 1, fileName: doc.fileName, mimeType: doc.mimeType, ...(office ? { text: officeText(bytes, doc.mimeType as ScanFileType) } : { data: bytes }) };
   }
 
   private async runJob(actor: Actor, scanId: string, job: { kind: ExtractionJob; runId: string; pages: ExtractionPage[] }) {
