@@ -80,7 +80,7 @@ describe('role permissions are enforced by the API', () => {
     for (const v of vendors) for (const money of ['totalPurchases', 'payableAmount', 'previousDue', 'newDue', 'advanceAmount', 'openingBalance']) expect(v).not.toHaveProperty(money);
     await h.http().get(`/api/v1/vendors/${vendors[0]!.id}/ledger`).set(s).expect(403);
     await h.http().patch(`/api/v1/vendors/${vendors[0]!.id}`).set(s).send({ phone: '1' }).expect(403);
-    await h.http().put('/api/v1/settings/sale-charges').set(s).send({ amaliPerBag: 0, marketFeePerBag: 0, amaliEnabled: false, marketFeeEnabled: false }).expect(403);
+    await h.http().put('/api/v1/settings/sale-charges').set(s).send({ amaliPerBag: 0, marketFeePerBag: 0, marketFeeBasis: 'BILL_PERCENT', marketFeePercent: 1, amaliEnabled: false, marketFeeEnabled: false }).expect(403);
     await h.http().get('/api/v1/users').set(s).expect(403);
   });
 
@@ -103,8 +103,8 @@ describe('role permissions are enforced by the API', () => {
     const m = auth(await h.token('manager'));
     const o = auth(await h.token('owner'));
     await h.http().post('/api/v1/stock/adjustments').set(m).send({ lotNumber: 'lot ap', markCode: 'aa', type: 'REDUCE', bags: 1, weightKg: 52, reason: 'Rotten bag' }).expect(201);
-    await h.http().put('/api/v1/settings/sale-charges').set(m).send({ amaliPerBag: 0, marketFeePerBag: 0, amaliEnabled: false, marketFeeEnabled: false }).expect(403);
-    await h.http().put('/api/v1/settings/sale-charges').set(o).send({ amaliPerBag: 25, marketFeePerBag: 10, amaliEnabled: true, marketFeeEnabled: true }).expect(200);
+    await h.http().put('/api/v1/settings/sale-charges').set(m).send({ amaliPerBag: 0, marketFeePerBag: 0, marketFeeBasis: 'BILL_PERCENT', marketFeePercent: 1, amaliEnabled: false, marketFeeEnabled: false }).expect(403);
+    await h.http().put('/api/v1/settings/sale-charges').set(o).send({ amaliPerBag: 25, marketFeePerBag: 10, marketFeeBasis: 'BILL_PERCENT', marketFeePercent: 1, amaliEnabled: true, marketFeeEnabled: true }).expect(200);
   });
 
   it('owner manages users; a deactivated user cannot refresh', async () => {

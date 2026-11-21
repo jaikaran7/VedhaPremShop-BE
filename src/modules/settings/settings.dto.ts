@@ -22,9 +22,16 @@ export class CompanySettingsDto {
   @IsInt() @Min(1) @Max(30) paymentAlertDays!: number;
 }
 
+const MARKET_FEE_BASIS = ['PER_BAG', 'BILL_PERCENT'] as const;
+
 export class SaleChargeSettingsDto {
   @ApiProperty() @IsNumber(money) @Min(0) @Max(10_000) amaliPerBag!: number;
-  @ApiProperty() @IsNumber(money) @Min(0) @Max(10_000) marketFeePerBag!: number;
+  @ApiProperty({ description: 'Rupees per bag. Used when marketFeeBasis is PER_BAG.' })
+  @IsNumber(money) @Min(0) @Max(10_000) marketFeePerBag!: number;
+  @ApiProperty({ enum: MARKET_FEE_BASIS, example: 'BILL_PERCENT', description: 'Per bag, or a percent of the product bill.' })
+  @IsIn(MARKET_FEE_BASIS) marketFeeBasis!: (typeof MARKET_FEE_BASIS)[number];
+  @ApiProperty({ example: 1, description: 'Percent of the product bill. Used when marketFeeBasis is BILL_PERCENT. Default 1.' })
+  @IsNumber({ maxDecimalPlaces: 2 }) @Min(0) @Max(100) marketFeePercent!: number;
   @ApiProperty() @IsBoolean() amaliEnabled!: boolean;
   @ApiProperty() @IsBoolean() marketFeeEnabled!: boolean;
 }

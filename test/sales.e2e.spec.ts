@@ -38,8 +38,15 @@ const sale = (over: Record<string, unknown> = {}) => ({
   confirmDuplicateSale: true,
   ...over,
 });
-// 151 kg × ₹69 = ₹10,419; 3 bags × (₹20 Amali + ₹10 market fee) = ₹90 → ₹10,509
-const TOTAL = 10_509;
+// 151 kg × ₹69 = ₹10,419; Amali ₹60; market fee 1% = ₹104.19, rounded up → ₹10,584
+const TOTAL = 10_584;
+// 100.5 kg × ₹69 = ₹6,935; Amali ₹40; market fee ₹69.35, rounded up → ₹7,045
+const TWO_BAGS = 7_045;
+// 200 kg × ₹69 = ₹13,800; Amali ₹80; market fee ₹138 → ₹14,018
+const FOUR_BAGS = 14_018;
+// 80 kg × ₹100 = ₹8,000; Amali ₹40; market fee ₹80 → ₹8,120
+const GARLIC = 8_120;
+const paise = (rupees: number) => Math.round(rupees * 100);
 const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
 const daysAgo = (n: number) => { const d = new Date(`${today()}T00:00:00Z`); d.setUTCDate(d.getUTCDate() - n); return d.toISOString().slice(0, 10); };
 
@@ -59,12 +66,12 @@ describe('cash, credit and counter bills', () => {
     expect(res.body).toMatchObject({
       billNumber: 'VPN-INV-1085', date: today(), totalBags: 3, totalWeightKg: 151, productSubtotal: 10_419, totalAmount: TOTAL,
       paymentType: 'CASH', paymentStatus: 'PAID', paidAmount: TOTAL, balanceDue: 0, status: 'CONFIRMED',
-      tenders: [{ method: 'CASH', amount: TOTAL }], charges: { amaliAmount: 60, marketFeeAmount: 30, finalInvoiceAmount: TOTAL },
+      tenders: [{ method: 'CASH', amount: TOTAL }], charges: { amaliAmount: 60, marketFeeAmount: 105, marketFeeBasis: 'BILL_PERCENT', finalInvoiceAmount: TOTAL },
     });
     expect(await lotMark('LOT AP', 'AA')).toMatchObject({ remainingBags: 75, remainingWeightKg: 3905 });
     expect(await outstanding('CUST-001')).toBe(150_000);
     const receipts = (await h.http().get('/api/v1/payments').set(owner)).body;
-    expect(receipts[0]).toMatchObject({ receiptNumber: 'VPN-REC-510', amount: TOTAL, previousOutstanding: 160_509, newOutstanding: 150_000 });
+    expect(receipts[0]).toMatchObject({ receiptNumber: 'VPN-REC-510', amount: TOTAL, previousOutstanding: 160_584, newOutstanding: 150_000 });
   });
 
   it('counter bill must be paid in full; its cash is collected under "Counter sales"', async () => {
@@ -90,12 +97,12 @@ describe('receipts and advances', () => {
     const credit = await h.http().post('/api/v1/sales').set(cashier).send(sale()).expect(201);
     const named = await h.http().post('/api/v1/payments').set(cashier)
       .send({ customerId: customers['CUST-001']!.id, amount: 4000, paymentMethod: 'UPI', referenceNumber: credit.body.billNumber }).expect(201);
-    expect(named.body).toMatchObject({ previousOutstanding: 160_509, newOutstanding: 156_509, billAllocations: [{ billNumber: credit.body.billNumber, amount: 4000 }] });
-    expect((await h.http().get(`/api/v1/sales/${credit.body.id}`).set(owner)).body).toMatchObject({ paidAmount: 4000, balanceDue: 6509, paymentStatus: 'PARTIAL' });
+    expect(named.body).toMatchObject({ previousOutstanding: 160_584, newOutstanding: 156_584, billAllocations: [{ billNumber: credit.body.billNumber, amount: 4000 }] });
+    expect((await h.http().get(`/api/v1/sales/${credit.body.id}`).set(owner)).body).toMatchObject({ paidAmount: 4000, balanceDue: 6_584, paymentStatus: 'PARTIAL' });
 
     const general = await h.http().post('/api/v1/payments').set(owner).send({ customerId: customers['CUST-001']!.id, amount: 10_000, paymentMethod: 'CASH' }).expect(201);
     expect(general.body.billAllocations).toEqual([{ saleId: null, billNumber: null, amount: 10_000 }]);
-    expect(await outstanding('CUST-001')).toBe(146_509);
+    expect(paise(await outstanding('CUST-001'))).toBe(14_658_319);
   });
 
   it('paying more than owed is accepted and kept as an advance that the next bill uses', async () => {
@@ -105,8 +112,8 @@ describe('receipts and advances', () => {
     expect(await customer('CUST-004')).toMatchObject({ outstandingAmount: 0, advanceAmount: 5000 });
 
     const bill = await h.http().post('/api/v1/sales').set(cashier).send(sale({ customerId: customers['CUST-004']!.id })).expect(201);
-    expect(bill.body).toMatchObject({ paidAmount: 5000, balanceDue: TOTAL - 5000, paymentStatus: 'PARTIAL' });
-    expect(await customer('CUST-004')).toMatchObject({ outstandingAmount: TOTAL - 5000, advanceAmount: 0 });
+    expect(bill.body).toMatchObject({ paidAmount: 5000, balanceDue: 5_584, paymentStatus: 'PARTIAL' });
+    expect(await customer('CUST-004')).toMatchObject({ outstandingAmount: 5_584, advanceAmount: 0 });
   });
 });
 
@@ -132,7 +139,9 @@ describe('stock and price guards', () => {
   });
 
   it('refuses a bill whose total differs from what the cashier saw; allows selling below the floor rate', async () => {
-    await h.http().put('/api/v1/settings/sale-charges').set(owner).send({ amaliPerBag: 25, marketFeePerBag: 10, amaliEnabled: true, marketFeeEnabled: true }).expect(200);
+    await h.http().put('/api/v1/settings/sale-charges').set(owner).send({
+      amaliPerBag: 25, marketFeePerBag: 10, marketFeeBasis: 'PER_BAG', marketFeePercent: 1, amaliEnabled: true, marketFeeEnabled: true,
+    }).expect(200);
     expect((await h.http().post('/api/v1/sales').set(cashier).send(sale({ totalAmount: TOTAL })).expect(409)).body.message).toMatch(/₹10524/);
     await h.http().post('/api/v1/sales').set(cashier).send(sale({ items: [{ lotNumber: 'LOT AP', markCode: 'AA', ratePerKg: 30, bagWeights: bags(50) }] })).expect(201);
   });
@@ -173,9 +182,9 @@ describe('bills dated another day', () => {
   it('a staff bill dated another day posts at once: stock, receivable and receipt are all on that date, no approval', async () => {
     const before = await lotMark('LOT AP', 'AA');
     const res = await h.http().post('/api/v1/sales').set(cashier).send(sale({ date: daysAgo(2), dateReason: "Yesterday's slip entered late", tenders: [{ method: 'CASH', amount: 1000 }] })).expect(201);
-    expect(res.body).toMatchObject({ status: 'CONFIRMED', date: daysAgo(2), paidAmount: 1000, balanceDue: TOTAL - 1000 });
+    expect(res.body).toMatchObject({ status: 'CONFIRMED', date: daysAgo(2), paidAmount: 1000, balanceDue: 9_584 });
     expect((await lotMark('LOT AP', 'AA')).remainingBags).toBe(before.remainingBags - 3);
-    expect(await outstanding('CUST-001')).toBe(150_000 + TOTAL - 1000);
+    expect(paise(await outstanding('CUST-001'))).toBe(15_000_000 + 1_058_400 - 100_000);
     expect((await h.http().get('/api/v1/payments').set(owner)).body[0]).toMatchObject({ date: daysAgo(2), amount: 1000 });
     expect(await approvals()).toEqual([]); // nothing waits for the owner
     expect(await h.db.auditLog.count({ where: { action: 'CREATE_SALE', details: { contains: `dated ${daysAgo(2)}` } } })).toBe(1);
@@ -203,8 +212,8 @@ describe('cancel and rebill', () => {
     const res = await h.http().post(`/api/v1/sales/${paid.body.id}/cancel`).set(owner).send({ reason: 'Customer returned bags' }).expect(200);
     expect(res.body).toMatchObject({ status: 'APPLIED', sale: { status: 'CANCELLED', paidAmount: 0 } });
     expect(await lotMark('LOT AP', 'AA')).toEqual(before);
-    // The ₹10,509 receipt now settles part of the opening balance.
-    expect(await outstanding('CUST-001')).toBe(150_000 - TOTAL);
+    // The receipt now settles part of the opening balance.
+    expect(paise(await outstanding('CUST-001'))).toBe(15_000_000 - 1_058_400);
   });
 
   it('staff cancel goes to the owner; staff can see it but not decide', async () => {
@@ -224,10 +233,10 @@ describe('cancel and rebill', () => {
     const paid = await h.http().post('/api/v1/sales').set(cashier).send(sale({ tenders: [{ method: 'UPI', amount: 5000 }] })).expect(201);
     const edited = { ...sale({ tenders: [] }), items: [{ lotNumber: 'LOT AP', markCode: 'AA', ratePerKg: 69, bagWeights: bags(50.5, 50) }], reason: 'Third bag was not loaded' };
     const res = await h.http().post(`/api/v1/sales/${paid.body.id}/rebill`).set(owner).send(edited).expect(200);
-    // 100.5 kg × ₹69 = ₹6,935 (6934.5 rounds up) + 2 bags × ₹30 = ₹6,995
+    // 100.5 kg × ₹69 = ₹6,935; Amali ₹40; market fee 1% = ₹69.35, rounded up → ₹7,045. ₹5,000 already paid.
     expect(res.body).toMatchObject({
       status: 'APPLIED',
-      sale: { id: paid.body.id, billNumber: paid.body.billNumber, status: 'CONFIRMED', totalAmount: 6995, paidAmount: 5000, balanceDue: 1995, date: paid.body.date },
+      sale: { id: paid.body.id, billNumber: paid.body.billNumber, status: 'CONFIRMED', totalAmount: TWO_BAGS, paidAmount: 5000, balanceDue: 2_045, date: paid.body.date },
     });
     expect(res.body.sale.replacesBillNumber).toBeUndefined();
     expect(res.body.sale.revisions[0]).toMatchObject({ reason: 'Third bag was not loaded', editedByRole: 'OWNER' });
@@ -238,7 +247,7 @@ describe('cancel and rebill', () => {
     expect((await h.http().get(`/api/v1/sales/${paid.body.id}`).set(owner)).body.status).toBe('CONFIRMED');
     expect(await h.db.sale.count()).toBe(bills + 1);
     expect((await lotMark('LOT AP', 'AA')).remainingBags).toBe(before.remainingBags - 2);
-    expect(await outstanding('CUST-001')).toBe(150_000 + 1995);
+    expect(paise(await outstanding('CUST-001'))).toBe(15_000_000 + 704_500 - 500_000);
   });
 
   it('lists edited bills newest first, with a fixed number of queries', async () => {
@@ -275,21 +284,21 @@ describe('cancel and rebill', () => {
     expect(await lotMark('LOT AP', 'AA')).toMatchObject({ remainingBags: before.remainingBags - 3 });
     await h.http().post(`/api/v1/approvals/${res.body.approvalId}`).set(owner).send({ action: 'APPROVE' }).expect(204);
     expect((await h.http().get(`/api/v1/sales/${counter.body.id}`).set(owner)).body).toMatchObject({
-      id: counter.body.id, billNumber: counter.body.billNumber, status: 'CONFIRMED', totalAmount: 6995,
+      id: counter.body.id, billNumber: counter.body.billNumber, status: 'CONFIRMED', totalAmount: TWO_BAGS,
     });
     const receipts = (await h.http().get('/api/v1/payments').set(owner)).body as { kind: string; amount: number }[];
-    expect(receipts.find((r) => r.kind === 'REFUND')).toMatchObject({ amount: -(TOTAL - 6995) });
+    expect(receipts.find((r) => r.kind === 'REFUND')).toMatchObject({ amount: -3_539 });
   });
 
   it('a larger edit of the same bill takes the extra bags and weight and adds the extra amount', async () => {
     const before = await lotMark('LOT AP', 'AA');
     const bill = await h.http().post('/api/v1/sales').set(cashier).send(sale()).expect(201);
-    // 200 kg × ₹69 = ₹13,800 + 4 bags × ₹30 = ₹13,920
+    // 200 kg × ₹69 = ₹13,800; Amali ₹80; market fee 1% = ₹138 → ₹14,018
     const edited = { ...sale({ tenders: [] }), items: [{ lotNumber: 'LOT AP', markCode: 'AA', ratePerKg: 69, bagWeights: bags(50, 50, 50, 50) }], reason: 'A fourth bag was loaded' };
     const res = await h.http().post(`/api/v1/sales/${bill.body.id}/rebill`).set(owner).send(edited).expect(200);
-    expect(res.body).toMatchObject({ status: 'APPLIED', sale: { id: bill.body.id, billNumber: bill.body.billNumber, totalAmount: 13_920, balanceDue: 13_920 } });
+    expect(res.body).toMatchObject({ status: 'APPLIED', sale: { id: bill.body.id, billNumber: bill.body.billNumber, totalAmount: FOUR_BAGS, balanceDue: FOUR_BAGS } });
     expect(await lotMark('LOT AP', 'AA')).toMatchObject({ remainingBags: before.remainingBags - 4, remainingWeightKg: before.remainingWeightKg - 200 });
-    expect(await outstanding('CUST-001')).toBe(150_000 + 13_920);
+    expect(await outstanding('CUST-001')).toBe(150_000 + FOUR_BAGS);
   });
 
   it('editing a fully paid bill down keeps the same bill, the extra collection as credit, and returns the spare bags', async () => {
@@ -297,10 +306,10 @@ describe('cancel and rebill', () => {
     const paid = await h.http().post('/api/v1/sales').set(cashier).send(sale({ tenders: [{ method: 'CASH', amount: TOTAL }] })).expect(201);
     const edited = { ...sale({ tenders: [] }), items: [{ lotNumber: 'LOT AP', markCode: 'AA', ratePerKg: 69, bagWeights: bags(50.5, 50) }], reason: 'One bag came back' };
     const res = await h.http().post(`/api/v1/sales/${paid.body.id}/rebill`).set(owner).send(edited).expect(200);
-    expect(res.body).toMatchObject({ status: 'APPLIED', sale: { id: paid.body.id, totalAmount: 6995, paidAmount: 6995, balanceDue: 0 } });
+    expect(res.body).toMatchObject({ status: 'APPLIED', sale: { id: paid.body.id, totalAmount: TWO_BAGS, paidAmount: TWO_BAGS, balanceDue: 0 } });
     expect(await lotMark('LOT AP', 'AA')).toMatchObject({ remainingBags: before.remainingBags - 2, remainingWeightKg: before.remainingWeightKg - 100.5 });
-    // ₹10,509 collected against a ₹6,995 bill; the ₹3,514 difference pays down the opening balance.
-    expect(await outstanding('CUST-001')).toBe(150_000 - (TOTAL - 6995));
+    // The amount collected above the edited bill pays down the opening balance.
+    expect(paise(await outstanding('CUST-001'))).toBe(15_000_000 - (1_058_400 - 704_500));
     expect(await customer('CUST-001')).toMatchObject({ advanceAmount: 0 });
   });
 
@@ -310,7 +319,7 @@ describe('cancel and rebill', () => {
     const products = (await h.http().get('/api/v1/settings/products').set(owner)).body as { id: string; code: string }[];
     const garlicId = products.find((p) => p.code === 'GARLIC')!.id;
     const bill = await h.http().post('/api/v1/sales').set(cashier).send(sale()).expect(201);
-    // 80 kg × ₹100 = ₹8,000 + 2 bags × ₹30 = ₹8,060
+    // 80 kg × ₹100 = ₹8,000; Amali ₹40; market fee 1% = ₹80 → ₹8,120
     const edited = {
       ...sale({ tenders: [], productId: garlicId }),
       items: [{ lotNumber: 'LOT GL', markCode: 'BOLD', ratePerKg: 100, bagWeights: bags(40, 40) }],
@@ -319,11 +328,11 @@ describe('cancel and rebill', () => {
     const res = await h.http().post(`/api/v1/sales/${bill.body.id}/rebill`).set(owner).send(edited).expect(200);
     expect(res.body).toMatchObject({
       status: 'APPLIED',
-      sale: { id: bill.body.id, billNumber: bill.body.billNumber, customerId: customers['CUST-001']!.id, productName: 'Garlic', totalBags: 2, totalWeightKg: 80, totalAmount: 8060 },
+      sale: { id: bill.body.id, billNumber: bill.body.billNumber, customerId: customers['CUST-001']!.id, productName: 'Garlic', totalBags: 2, totalWeightKg: 80, totalAmount: GARLIC },
     });
     expect(await lotMark('LOT AP', 'AA')).toEqual(onions);
     expect(await lotMark('LOT GL', 'BOLD')).toMatchObject({ remainingBags: garlic.remainingBags - 2, remainingWeightKg: garlic.remainingWeightKg - 80 });
-    expect(await outstanding('CUST-001')).toBe(150_000 + 8060);
+    expect(await outstanding('CUST-001')).toBe(150_000 + GARLIC);
     expect(res.body.sale.revisions[0].changes).toEqual(expect.arrayContaining([
       expect.objectContaining({ field: 'productName', from: 'Onions', to: 'Garlic' }),
     ]));
@@ -337,7 +346,7 @@ describe('cancel and rebill', () => {
     await h.http().post(`/api/v1/sales/${bill.body.id}/rebill`).set(owner).send(edited).expect(422);
     expect((await h.http().get(`/api/v1/sales/${bill.body.id}`).set(owner)).body).toMatchObject({ customerId: customers['CUST-001']!.id, totalAmount: TOTAL });
     expect(await lotMark('LOT AP', 'AA')).toMatchObject({ remainingBags: before.remainingBags - 3 });
-    expect(await outstanding('CUST-001')).toBe(150_000 + TOTAL);
+    expect(paise(await outstanding('CUST-001'))).toBe(15_000_000 + 1_058_400);
   });
 
   it('a staff cancel changes nothing until approved, and a second approval does not apply it again', async () => {
@@ -346,7 +355,7 @@ describe('cancel and rebill', () => {
     const res = await h.http().post(`/api/v1/sales/${bill.body.id}/cancel`).set(cashier).send({ reason: 'Wrong customer' }).expect(200);
     expect(res.body.status).toBe('PENDING_APPROVAL');
     expect(await lotMark('LOT AP', 'AA')).toMatchObject({ remainingBags: before.remainingBags - 3, remainingWeightKg: before.remainingWeightKg - 151 });
-    expect(await outstanding('CUST-001')).toBe(150_000 + TOTAL);
+    expect(paise(await outstanding('CUST-001'))).toBe(15_000_000 + 1_058_400);
 
     const both = await Promise.all([
       h.http().post(`/api/v1/approvals/${res.body.approvalId}`).set(owner).send({ action: 'APPROVE' }),

@@ -1,7 +1,10 @@
 import { lineAmountPaise, toGrams, toPaise } from '../../common/money';
 import { priceBill, settle, stockDraws } from './sales.calc';
 
-const charges = { amaliPerBag: 20, marketFeePerBag: 10, amaliEnabled: true, marketFeeEnabled: true };
+const charges = {
+  amaliPerBag: 20, marketFeePerBag: 10, marketFeeBasis: 'PER_BAG' as const, marketFeePercent: 1,
+  amaliEnabled: true, marketFeeEnabled: true,
+};
 const bags = (...kg: number[]) => kg.map((weightKg, i) => ({ bagNumber: i + 1, weightKg }));
 
 describe('line amount', () => {
@@ -30,6 +33,16 @@ describe('priceBill', () => {
     expect(bill.amaliPaise).toBe(8000);
     expect(bill.marketFeePaise).toBe(4000);
     expect(bill.totalPaise).toBe(bill.subtotalPaise + 12000);
+  });
+
+  it('charges market fee as a percent of the product bill, not per bag', () => {
+    const bill = priceBill([
+      { lotNumber: 'LOT AP', markCode: 'AA', ratePerKg: 69, bagWeights: bags(50.5, 50, 50.5) },
+    ], { ...charges, marketFeeBasis: 'BILL_PERCENT', marketFeePercent: 1 });
+    expect(bill.subtotalPaise).toBe(1_041_900); // ₹10,419
+    expect(bill.amaliPaise).toBe(6_000);
+    expect(bill.marketFeePaise).toBe(10_500); // 1% is ₹104.19; the bill rounds up to ₹10,584
+    expect(bill.totalPaise).toBe(1_058_400);
   });
 
   it('skips disabled charges', () => {
@@ -102,7 +115,7 @@ describe('optional GST / tax', () => {
   });
 
   it('a typed amount is kept exactly and added to the total', () => {
-    expect(priceBill(lines, charges, { amount: 250.5 })).toMatchObject({ taxPaise: 25_050, taxPercent: null, totalPaise: 503_450 });
+    expect(priceBill(lines, charges, { amount: 250.5 })).toMatchObject({ taxPaise: 25_050, taxPercent: null, totalPaise: 503_500 });
   });
 
   it('percentage and amount together are refused', () => {

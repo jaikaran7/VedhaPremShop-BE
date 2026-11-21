@@ -6,6 +6,8 @@ import { roundMoney } from './settlement';
 export const DEFAULT_SALE_CHARGE_SETTINGS: SaleChargeSettings = {
   amaliPerBag: 20,
   marketFeePerBag: 10,
+  marketFeeBasis: 'BILL_PERCENT',
+  marketFeePercent: 1,
   amaliEnabled: true,
   marketFeeEnabled: true,
 };
@@ -37,23 +39,35 @@ export function calculateSaleCharges(input: {
   const amaliAmount = input.settings.amaliEnabled
     ? roundMoney(bagCount * input.settings.amaliPerBag)
     : 0;
-  const marketFeeAmount = input.settings.marketFeeEnabled
-    ? roundMoney(bagCount * input.settings.marketFeePerBag)
-    : 0;
-  const totalAdditionalCharges = roundMoney(amaliAmount + marketFeeAmount + otherCharges);
+  const exactMarketFee = marketFeeFor(bagCount, productSubtotal, input.settings);
+  const exactTotal = roundMoney(productSubtotal + amaliAmount + exactMarketFee + otherCharges);
+  const finalInvoiceAmount = roundUpRupee(exactTotal);
+  const lift = roundMoney(finalInvoiceAmount - exactTotal);
+  const ontoFee = input.settings.marketFeeEnabled;
+  const marketFeeAmount = roundMoney(exactMarketFee + (ontoFee ? lift : 0));
+  const billedOther = roundMoney(otherCharges + (ontoFee ? 0 : lift));
+  const totalAdditionalCharges = roundMoney(amaliAmount + marketFeeAmount + billedOther);
   return {
     amaliPerBag: input.settings.amaliPerBag,
     marketFeePerBag: input.settings.marketFeePerBag,
+    marketFeeBasis: input.settings.marketFeeBasis,
+    marketFeePercent: input.settings.marketFeePercent,
     amaliEnabled: input.settings.amaliEnabled,
     marketFeeEnabled: input.settings.marketFeeEnabled,
     bagCount,
     amaliAmount,
     marketFeeAmount,
-    otherCharges,
+    otherCharges: billedOther,
     productSubtotal,
     totalAdditionalCharges,
-    finalInvoiceAmount: roundMoney(productSubtotal + totalAdditionalCharges),
+    finalInvoiceAmount,
   };
+}
+
+function roundUpRupee(amount: number): number {
+  const paise = Math.round(roundMoney(amount) * 100);
+  if (paise % 100 === 0) return paise / 100;
+  return Math.floor(paise / 100) + 1;
 }
 
 /** Finalized invoices keep their saved snapshot. Missing snapshots were billed before mandi fees. */
@@ -65,6 +79,8 @@ export function chargesForSale(
   return {
     amaliPerBag: 0,
     marketFeePerBag: 0,
+    marketFeeBasis: 'PER_BAG',
+    marketFeePercent: 0,
     amaliEnabled: false,
     marketFeeEnabled: false,
     bagCount: sale.totalBags,
@@ -84,4 +100,14 @@ export function balanceAfterPayment(finalInvoiceAmount: number, amountPaid: numb
 export function feeBasisLabel(bags: number, rate: number, enabled: boolean): string {
   if (!enabled) return 'Not charged';
   return `${bags} bags × ₹${rate}`;
+}
+
+function marketFeeFor(bagCount: number, productSubtotal: number, settings: SaleChargeSettings): number {
+  if (!settings.marketFeeEnabled) return 0;
+  if (settings.marketFeeBasis === 'BILL_PERCENT') {
+    const paise = Math.round(productSubtotal * 100);
+    const hundredths = Math.round(settings.marketFeePercent * 100);
+    return Math.round((paise * hundredths) / 10_000) / 100;
+  }
+  return roundMoney(bagCount * settings.marketFeePerBag);
 }

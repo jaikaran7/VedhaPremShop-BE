@@ -7,7 +7,7 @@ import type { Tx } from '../../database/prisma.service';
 import type { Organization, Prisma, SaleStatus } from '../../generated/prisma/client';
 import { applyStockChange } from '../inventory/stock-ledger';
 import { customerBalancePaise, lockCustomer, releaseSaleAllocations, settleCustomer } from '../payments/receivables';
-import { type PaymentMethod, paymentStatusFor, priceBill, settle, stockDraws, type BillTotals } from './sales.calc';
+import { type PaymentMethod, chargeSettings, paymentStatusFor, priceBill, settle, stockDraws, type BillTotals } from './sales.calc';
 import type { CreateSaleDto } from './sales.dto';
 import { diffSale, type SaleSnapshot } from './sale-diff';
 
@@ -60,10 +60,7 @@ export async function insertBill(tx: Tx, actor: Actor, org: Organization, input:
   const product = await tx.product.findFirst({ where: { id: input.productId, organizationId: actor.organizationId } });
   if (!product) throw new NotFoundException('Product not found');
 
-  const bill = priceBill(input.items, {
-    amaliPerBag: Number(org.amaliPerBag), marketFeePerBag: Number(org.marketFeePerBag),
-    amaliEnabled: org.amaliEnabled, marketFeeEnabled: org.marketFeeEnabled,
-  }, { percent: input.taxPercent, amount: input.taxAmount });
+  const bill = priceBill(input.items, chargeSettings(org), { percent: input.taxPercent, amount: input.taxAmount });
   if (input.totalAmount !== undefined && toPaise(input.totalAmount) !== bill.totalPaise) {
     throw new ConflictException(`Bill total is ₹${fromPaise(bill.totalPaise)} with current rates and charges. Review the bill and confirm again.`);
   }
@@ -103,10 +100,13 @@ export async function insertBill(tx: Tx, actor: Actor, org: Organization, input:
     productSubtotal: fromPaise(bill.subtotalPaise),
     amaliPerBag: org.amaliPerBag,
     marketFeePerBag: org.marketFeePerBag,
+    marketFeeBasis: org.marketFeeBasis,
+    marketFeePercent: org.marketFeePercent,
     amaliEnabled: org.amaliEnabled,
     marketFeeEnabled: org.marketFeeEnabled,
     amaliAmount: fromPaise(bill.amaliPaise),
     marketFeeAmount: fromPaise(bill.marketFeePaise),
+    otherCharges: fromPaise(bill.otherPaise),
     taxPercent: bill.taxPercent,
     taxAmount: fromPaise(bill.taxPaise),
     totalAmount: fromPaise(bill.totalPaise),
@@ -254,10 +254,7 @@ export async function reviseSale(tx: Tx, actor: Actor, org: Organization, saleId
   const customer = await loadCustomer(tx, actor, sale.customerPartyId);
   const product = await tx.product.findFirst({ where: { id: dto.productId, organizationId: actor.organizationId } });
   if (!product) throw new NotFoundException('Product not found');
-  const priced = priceBill(dto.items, {
-    amaliPerBag: Number(org.amaliPerBag), marketFeePerBag: Number(org.marketFeePerBag),
-    amaliEnabled: org.amaliEnabled, marketFeeEnabled: org.marketFeeEnabled,
-  }, { percent: dto.taxPercent, amount: dto.taxAmount });
+  const priced = priceBill(dto.items, chargeSettings(org), { percent: dto.taxPercent, amount: dto.taxAmount });
   if (dto.totalAmount !== undefined && toPaise(dto.totalAmount) !== priced.totalPaise) {
     throw new ConflictException(`Bill total is ₹${fromPaise(priced.totalPaise)} with current rates and charges. Review the bill and confirm again.`);
   }
@@ -346,10 +343,13 @@ function saleTotals(org: Organization, product: { id: string; name: string }, pr
     productSubtotal: fromPaise(priced.subtotalPaise),
     amaliPerBag: org.amaliPerBag,
     marketFeePerBag: org.marketFeePerBag,
+    marketFeeBasis: org.marketFeeBasis,
+    marketFeePercent: org.marketFeePercent,
     amaliEnabled: org.amaliEnabled,
     marketFeeEnabled: org.marketFeeEnabled,
     amaliAmount: fromPaise(priced.amaliPaise),
     marketFeeAmount: fromPaise(priced.marketFeePaise),
+    otherCharges: fromPaise(priced.otherPaise),
     taxPercent: priced.taxPercent,
     taxAmount: fromPaise(priced.taxPaise),
     totalAmount: fromPaise(priced.totalPaise),

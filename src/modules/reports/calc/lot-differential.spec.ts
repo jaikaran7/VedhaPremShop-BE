@@ -118,9 +118,9 @@ describe('lot differential', () => {
     assert.equal(row.remainingWeightKg, 350);
     assert.equal(row.salesRealization, 10419);
     assert.equal(row.amali, 60);
-    assert.equal(row.marketFee, 30);
+    assert.equal(row.marketFee, 105);
     assert.equal(row.purchaseCost, 21000);
-    assert.equal(row.realizedProfit, 10419 - 6300 - 90);
+    assert.equal(row.realizedProfit, 10419 - 6300 - 165);
     assert.equal(row.estimatedProfit, null);
     assert.ok(row.remainingInventoryCost != null && row.remainingInventoryCost > 0);
     assert.notEqual(row.realizedProfit, 10419 - 21000);
@@ -176,7 +176,8 @@ describe('lot differential', () => {
     assert.equal(row.status, 'COMPLETED');
     assert.equal(row.closureStatus, 'CLOSED');
     assert.equal(row.remainingWeightKg, 0);
-    assert.equal(row.realizedProfit, 30000 - 21000 - 300);
+    const fees = charges.amaliAmount + charges.marketFeeAmount;
+    assert.equal(row.realizedProfit, 30000 - 21000 - fees);
     assert.equal(row.estimatedProfit, row.realizedProfit);
   });
 
@@ -242,8 +243,9 @@ describe('lot differential', () => {
     });
     const row = report.lots[0];
     assert.equal(row.purchaseCost, 21500);
-    assert.equal(row.realizedProfit, 30000 - 21500 - 300);
-    assert.notEqual(row.realizedProfit, 30000 - 21000 - 300);
+    const fees = charges.amaliAmount + charges.marketFeeAmount;
+    assert.equal(row.realizedProfit, 30000 - 21500 - fees);
+    assert.notEqual(row.realizedProfit, 30000 - 21000 - fees);
   });
 
   it('values unsold stock from receipts minus sales, not a short recorded remaining', () => {

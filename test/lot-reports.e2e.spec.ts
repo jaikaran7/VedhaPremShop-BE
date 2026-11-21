@@ -39,14 +39,14 @@ describe('lot breakdown computed on the server', () => {
 
   it('shows a new sale at once: sold quantity, sales amount, fees, cost of goods and profit that add up', async () => {
     expect((await lotAp()).soldBags).toBe(0);
-    await sell([50.5, 50, 50.5]); // 151 kg × ₹69 = ₹10,419; Amali ₹60 + market fee ₹30
+    await sell([50.5, 50, 50.5]); // 151 kg × ₹69 = ₹10,419; Amali ₹60 + market fee 1% rounded up = ₹105
     const lot = await lotAp();
     expect(lot).toMatchObject({ soldBags: 3, soldKg: 151, salesAmount: 10_419 });
-    expect(lot.base).toMatchObject({ amali: 60, marketFee: 30 });
+    expect(lot.base).toMatchObject({ amali: 60, marketFee: 105 });
     expect(lot.base.outgoingLines).toHaveLength(1);
     expect(lot.base.cogs).toEqual(expect.any(Number));
     // profit = sales − cost of goods sold − Amali − market fee
-    expect(lot.profit).toBeCloseTo(10_419 - (lot.base.cogs as number) - 90, 2);
+    expect(lot.profit).toBeCloseTo(10_419 - (lot.base.cogs as number) - 165, 2);
     await sell([50]);
     expect((await lotAp()).soldBags).toBe(4);
   });
@@ -97,8 +97,12 @@ describe('cached masters never show stale values to the person who just saved', 
     const saved = await h.http().put('/api/v1/settings/company').set(owner).send({ ...company, shopName: 'Vedhaprem Test Mandi', inactivePurchaseDays: 30, paymentAlertDays: 3 }).expect(200);
     expect(saved.body).toMatchObject({ shopName: 'Vedhaprem Test Mandi', inactivePurchaseDays: 30, paymentAlertDays: 3 });
     expect((await h.http().get('/api/v1/settings/company').set(cashier)).body.shopName).toBe('Vedhaprem Test Mandi');
-    await h.http().put('/api/v1/settings/sale-charges').set(owner).send({ amaliPerBag: 25, marketFeePerBag: 5, amaliEnabled: true, marketFeeEnabled: true }).expect(200);
-    expect((await h.http().get('/api/v1/settings/sale-charges').set(cashier)).body).toMatchObject({ amaliPerBag: 25, marketFeePerBag: 5 });
+    await h.http().put('/api/v1/settings/sale-charges').set(owner).send({
+      amaliPerBag: 25, marketFeePerBag: 5, marketFeeBasis: 'PER_BAG', marketFeePercent: 1, amaliEnabled: true, marketFeeEnabled: true,
+    }).expect(200);
+    expect((await h.http().get('/api/v1/settings/sale-charges').set(cashier)).body).toMatchObject({
+      amaliPerBag: 25, marketFeePerBag: 5, marketFeeBasis: 'PER_BAG', marketFeePercent: 1,
+    });
     const marks = (await h.http().get('/api/v1/settings/marks').set(owner)).body as { id: string; code: string }[];
     await h.http().patch(`/api/v1/settings/marks/${marks[0]!.id}`).set(owner).send({ defaultSellingRate: 88 }).expect(200);
     expect(((await h.http().get('/api/v1/settings/marks').set(cashier)).body as { id: string; defaultSellingRate: number }[]).find((m) => m.id === marks[0]!.id)!.defaultSellingRate).toBe(88);

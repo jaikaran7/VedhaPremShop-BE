@@ -17,7 +17,7 @@ export class SettingsController {
   @ApiEndpoint('Update company settings', 'Owner only.')
   @Roles('OWNER') @Put('company') updateCompany(@CurrentActor() a: Actor, @Body() dto: CompanySettingsDto) { return this.settings.updateCompany(a, dto); }
 
-  @ApiEndpoint('Get sale charge settings', 'Amali and market fee per bag and whether each is on.')
+  @ApiEndpoint('Get sale charge settings', 'Amali per bag, and market fee either per bag or as a percent of the product bill.')
   @Get('sale-charges') saleCharges(@CurrentActor() a: Actor) { return this.settings.saleCharges(a); }
   @ApiEndpoint('Update sale charge settings', 'Owner only.')
   @Roles('OWNER') @Put('sale-charges') updateSaleCharges(@CurrentActor() a: Actor, @Body() dto: SaleChargeSettingsDto) { return this.settings.updateSaleCharges(a, dto); }

@@ -44,19 +44,19 @@ it('buy, receive, sell, collect and pay the vendor: every balance tallies', asyn
   expect(await lot()).toMatchObject({ remainingBags: 100, remainingWeightKg: 5000, finalizedSellingRate: 47 });
 
   // 3. Sell 2 bags (50.5 + 50 = 100.5 kg) at ₹47: round(100.5 × 47 = 4,723.5) = ₹4,724.
-  //    Charges: Amali ₹20 × 2 + market fee ₹10 × 2 = ₹60. Bill ₹4,784. Cash ₹2,000 now, ₹2,784 on credit.
+  //    Charges: Amali ₹40; market fee 1% of ₹4,724 = ₹47.24. Bill ₹4,811.24. Cash ₹2,000 now, ₹2,811.24 on credit.
   const sale = (await h.http().post('/api/v1/sales').set(cashier).send({
     customerId: retailer.id, productId: onions.id, creditDays: 7, tenders: [{ method: 'CASH', amount: 2000 }],
     items: [{ lotNumber: '25 OCT TL', markCode: 'QA', ratePerKg: 47, bagWeights: [{ bagNumber: 1, weightKg: 50.5 }, { bagNumber: 2, weightKg: 50 }] }],
   }).expect(201)).body;
-  expect(sale).toMatchObject({ totalBags: 2, totalWeightKg: 100.5, productSubtotal: 4724, totalAmount: 4784, paidAmount: 2000, balanceDue: 2784, paymentStatus: 'PARTIAL' });
+  expect(sale).toMatchObject({ totalBags: 2, totalWeightKg: 100.5, productSubtotal: 4724, totalAmount: 4811.24, paidAmount: 2000, balanceDue: 2811.24, paymentStatus: 'PARTIAL' });
   expect(await lot()).toMatchObject({ remainingBags: 98, remainingWeightKg: 4899.5 });
-  expect((await get<{ id: string; outstandingAmount: number }[]>('/customers', cashier)).find((c) => c.id === retailer.id)!.outstandingAmount).toBe(retailer.outstandingAmount + 2784);
+  expect(cents((await get<{ id: string; outstandingAmount: number }[]>('/customers', cashier)).find((c) => c.id === retailer.id)!.outstandingAmount)).toBe(cents(retailer.outstandingAmount) + 281_124);
 
-  // 4. Retailer pays ₹1,000 by UPI -> still owes ₹1,784 of this bill.
+  // 4. Retailer pays ₹1,000 by UPI -> still owes ₹1,811.24 of this bill.
   await h.http().post('/api/v1/payments').set(cashier).send({ customerId: retailer.id, amount: 1000, paymentMethod: 'UPI' }).expect(201);
   const retailerNow = (await get<{ id: string; outstandingAmount: number }[]>('/customers')).find((c) => c.id === retailer.id)!;
-  expect(cents(retailerNow.outstandingAmount)).toBe(cents(retailer.outstandingAmount + 2784 - 1000));
+  expect(cents(retailerNow.outstandingAmount)).toBe(cents(retailer.outstandingAmount + 2811.24 - 1000));
 
   // 5. We pay the bigger distributor ₹1,00,000 by UPI, and ₹500 diesel in cash.
   const category = (name: string) => categories.find((c) => c.name === name)!.id;

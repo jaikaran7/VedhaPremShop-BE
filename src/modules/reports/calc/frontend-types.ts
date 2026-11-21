@@ -225,10 +225,15 @@ export interface SaleItem {
   bagWeights: SaleItemBag[];
 }
 
+/** Per bag, or a percent of the product bill (before Amali and tax). */
+export type MarketFeeBasis = 'PER_BAG' | 'BILL_PERCENT';
+
 /** Saved on each finalized invoice. Later setting changes must not rewrite it. */
 export interface SaleChargeSnapshot {
   amaliPerBag: number;
   marketFeePerBag: number;
+  marketFeeBasis: MarketFeeBasis;
+  marketFeePercent: number;
   amaliEnabled: boolean;
   marketFeeEnabled: boolean;
   bagCount: number;
@@ -243,6 +248,8 @@ export interface SaleChargeSnapshot {
 export interface SaleChargeSettings {
   amaliPerBag: number;
   marketFeePerBag: number;
+  marketFeeBasis: MarketFeeBasis;
+  marketFeePercent: number;
   amaliEnabled: boolean;
   marketFeeEnabled: boolean;
 }

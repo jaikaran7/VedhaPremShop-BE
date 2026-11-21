@@ -74,7 +74,9 @@ export async function seedDevData(db: PrismaClient, password: string): Promise<{
   const passwordHash = await hashPassword(password);
   return db.$transaction(async (tx) => {
     const org = await tx.organization.create({ data: {
-      slug: 'vedhaprem-mandi', ...fixture.company, amaliPerBag: 20, marketFeePerBag: 10, amaliEnabled: true, marketFeeEnabled: true,
+      slug: 'vedhaprem-mandi', ...fixture.company,
+      amaliPerBag: 20, marketFeePerBag: 10, marketFeeBasis: 'BILL_PERCENT', marketFeePercent: 1,
+      amaliEnabled: true, marketFeeEnabled: true,
     } });
     const organizationId = org.id;
     await tx.documentSequence.createMany({ data: [

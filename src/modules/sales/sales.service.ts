@@ -8,7 +8,7 @@ import { PrismaService, TX_OPTIONS, type Tx } from '../../database/prisma.servic
 import type { Prisma } from '../../generated/prisma/client';
 import { settleCustomer } from '../payments/receivables';
 import { cancelBill, COUNTER_SALE, insertBill, loadCustomer, postBillFinancials, reviseSale, type BillCustomer } from './billing';
-import { paymentStatusFor, priceBill } from './sales.calc';
+import { chargeSettings, paymentStatusFor, priceBill } from './sales.calc';
 import { sameSaleLines, summarizeExistingSale } from './sale-match';
 import type { CreateSaleDto, SalesQueryDto } from './sales.dto';
 import type { Organization } from '../../generated/prisma/client';
@@ -216,6 +216,8 @@ export class SalesService {
         charges: {
           amaliPerBag: Number(sale.amaliPerBag),
           marketFeePerBag: Number(sale.marketFeePerBag),
+          marketFeeBasis: sale.marketFeeBasis,
+          marketFeePercent: Number(sale.marketFeePercent),
           amaliEnabled: sale.amaliEnabled,
           marketFeeEnabled: sale.marketFeeEnabled,
           bagCount: sale.totalBags,
@@ -261,12 +263,7 @@ export class SalesService {
     opts: { customer: BillCustomer | null; saleDate: string; org: Organization },
   ): Promise<void> {
     if (dto.confirmDuplicateSale) return;
-    const priced = priceBill(dto.items, {
-      amaliPerBag: Number(opts.org.amaliPerBag),
-      marketFeePerBag: Number(opts.org.marketFeePerBag),
-      amaliEnabled: opts.org.amaliEnabled,
-      marketFeeEnabled: opts.org.marketFeeEnabled,
-    }, { percent: dto.taxPercent, amount: dto.taxAmount });
+    const priced = priceBill(dto.items, chargeSettings(opts.org), { percent: dto.taxPercent, amount: dto.taxAmount });
     const matches = await tx.sale.findMany({
       where: {
         organizationId: actor.organizationId,

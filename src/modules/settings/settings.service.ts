@@ -53,6 +53,8 @@ export class SettingsService {
     return {
       amaliPerBag: Number(org.amaliPerBag),
       marketFeePerBag: Number(org.marketFeePerBag),
+      marketFeeBasis: org.marketFeeBasis,
+      marketFeePercent: Number(org.marketFeePercent),
       amaliEnabled: org.amaliEnabled,
       marketFeeEnabled: org.marketFeeEnabled,
     };

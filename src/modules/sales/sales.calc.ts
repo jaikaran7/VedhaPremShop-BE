@@ -1,6 +1,6 @@
 import { UnprocessableEntityException } from '@nestjs/common';
 import { addCalendarDays } from '../../common/dates';
-import { lineAmountPaise, toGrams, toPaise } from '../../common/money';
+import { ceilToRupeePaise, lineAmountPaise, toGrams, toPaise } from '../../common/money';
 
 export type PaymentMethod = 'CASH' | 'UPI' | 'QR' | 'BANK_TRANSFER' | 'CARD' | 'OTHER' | 'CHEQUE';
 export type PaymentStatus = 'PAID' | 'PARTIAL' | 'CREDIT';
@@ -19,11 +19,34 @@ export interface PricedLine extends LineInput {
   amountPaise: number;
 }
 
+export type MarketFeeBasis = 'PER_BAG' | 'BILL_PERCENT';
+
 export interface ChargeSettings {
   amaliPerBag: number;
   marketFeePerBag: number;
+  marketFeeBasis: MarketFeeBasis;
+  marketFeePercent: number;
   amaliEnabled: boolean;
   marketFeeEnabled: boolean;
+}
+
+/** The organization's current charge rates, in rupees, for pricing a new or edited bill. */
+export function chargeSettings(org: {
+  amaliPerBag: { toString(): string } | number;
+  marketFeePerBag: { toString(): string } | number;
+  marketFeeBasis: MarketFeeBasis;
+  marketFeePercent: { toString(): string } | number;
+  amaliEnabled: boolean;
+  marketFeeEnabled: boolean;
+}): ChargeSettings {
+  return {
+    amaliPerBag: Number(org.amaliPerBag),
+    marketFeePerBag: Number(org.marketFeePerBag),
+    marketFeeBasis: org.marketFeeBasis,
+    marketFeePercent: Number(org.marketFeePercent),
+    amaliEnabled: org.amaliEnabled,
+    marketFeeEnabled: org.marketFeeEnabled,
+  };
 }
 
 export interface BillTotals {
@@ -33,6 +56,8 @@ export interface BillTotals {
   subtotalPaise: number;
   amaliPaise: number;
   marketFeePaise: number;
+  /** Paise added so the invoice is a whole rupee when the market fee is off. Otherwise that lift sits on the market fee. */
+  otherPaise: number;
   /** Optional GST/tax; part of the total. */
   taxPaise: number;
   taxPercent: number | null;
@@ -74,9 +99,33 @@ export function priceBill(items: LineInput[], settings: ChargeSettings, tax?: Ta
   const totalGrams = lines.reduce((sum, line) => sum + line.grams, 0);
   const subtotalPaise = lines.reduce((sum, line) => sum + line.amountPaise, 0);
   const amaliPaise = settings.amaliEnabled ? totalBags * toPaise(settings.amaliPerBag) : 0;
-  const marketFeePaise = settings.marketFeeEnabled ? totalBags * toPaise(settings.marketFeePerBag) : 0;
-  const taxed = taxFor(subtotalPaise + amaliPaise + marketFeePaise, tax);
-  return { lines, totalBags, totalGrams, subtotalPaise, amaliPaise, marketFeePaise, ...taxed, totalPaise: subtotalPaise + amaliPaise + marketFeePaise + taxed.taxPaise };
+  const exactMarketFeePaise = marketFeeFor(subtotalPaise, totalBags, settings);
+  const taxed = taxFor(subtotalPaise + amaliPaise + exactMarketFeePaise, tax);
+  const exactPaise = subtotalPaise + amaliPaise + exactMarketFeePaise + taxed.taxPaise;
+  const totalPaise = ceilToRupeePaise(exactPaise);
+  const liftPaise = totalPaise - exactPaise;
+  const ontoFee = settings.marketFeeEnabled;
+  return {
+    lines, totalBags, totalGrams, subtotalPaise, amaliPaise,
+    marketFeePaise: exactMarketFeePaise + (ontoFee ? liftPaise : 0),
+    otherPaise: ontoFee ? 0 : liftPaise,
+    ...taxed,
+    totalPaise,
+  };
+}
+
+/**
+ * Market fee in paise, before the invoice is rounded up to the next rupee. Per bag is bags × the rupee rate.
+ * A percent is that percent of the product bill (before Amali and tax), rounded half up to the paisa.
+ * The fee is not part of its own base. priceBill then adds any lift so the bill total is a whole rupee.
+ */
+export function marketFeeFor(subtotalPaise: number, totalBags: number, settings: ChargeSettings): number {
+  if (!settings.marketFeeEnabled) return 0;
+  if (settings.marketFeeBasis === 'BILL_PERCENT') {
+    const hundredths = Math.round(settings.marketFeePercent * 100);
+    return Math.round((subtotalPaise * hundredths) / 10_000);
+  }
+  return totalBags * toPaise(settings.marketFeePerBag);
 }
 
 /** Lines that hit the same lot and mark draw on one stock row; deduct them together. */

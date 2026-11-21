@@ -64,6 +64,12 @@ enum SaleStatus {
   CANCELLED
 }
 
+/// How a new bill's market fee is worked out. Saved bills keep the basis they were charged with.
+enum MarketFeeBasis {
+  PER_BAG
+  BILL_PERCENT
+}
+
 enum PaymentMethod {
   CASH
   UPI
@@ -149,10 +155,13 @@ model Organization {
   inactivePurchaseDays      Int      @default(45) @map("inactive_purchase_days")
   /// Dashboard alerts: vendor next-payment date or customer credit due within this many days (including overdue).
   paymentAlertDays          Int      @default(2) @map("payment_alert_days")
-  amaliPerBag               Decimal  @default(0) @map("amali_per_bag") @db.Decimal(10, 2)
-  marketFeePerBag           Decimal  @default(0) @map("market_fee_per_bag") @db.Decimal(10, 2)
-  amaliEnabled              Boolean  @default(false) @map("amali_enabled")
-  marketFeeEnabled          Boolean  @default(false) @map("market_fee_enabled")
+  amaliPerBag               Decimal        @default(0) @map("amali_per_bag") @db.Decimal(10, 2)
+  marketFeePerBag           Decimal        @default(0) @map("market_fee_per_bag") @db.Decimal(10, 2)
+  /// Per bag, or a percent of the product bill. Percent is the default for a new shop.
+  marketFeeBasis            MarketFeeBasis @default(BILL_PERCENT) @map("market_fee_basis")
+  marketFeePercent          Decimal        @default(1) @map("market_fee_percent") @db.Decimal(6, 2)
+  amaliEnabled              Boolean        @default(false) @map("amali_enabled")
+  marketFeeEnabled          Boolean        @default(false) @map("market_fee_enabled")
   /// Costing setting: added to landed cost before the final rate is rounded up to a whole rupee.
   defaultSellingMarginPerKg Decimal  @default(6) @map("default_selling_margin_per_kg") @db.Decimal(10, 2)
   createdAt                 DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -448,10 +457,13 @@ model Sale {
   totalBags        Int        @map("total_bags")
   totalWeightKg    Decimal    @map("total_weight_kg") @db.Decimal(12, 3)
   productSubtotal  Decimal    @map("product_subtotal") @db.Decimal(14, 2)
-  amaliPerBag      Decimal    @map("amali_per_bag") @db.Decimal(10, 2)
-  marketFeePerBag  Decimal    @map("market_fee_per_bag") @db.Decimal(10, 2)
-  amaliEnabled     Boolean    @map("amali_enabled")
-  marketFeeEnabled Boolean    @map("market_fee_enabled")
+  amaliPerBag      Decimal        @map("amali_per_bag") @db.Decimal(10, 2)
+  marketFeePerBag  Decimal        @map("market_fee_per_bag") @db.Decimal(10, 2)
+  /// Existing bills were charged per bag, so the column default keeps that label on rows already stored.
+  marketFeeBasis   MarketFeeBasis @default(PER_BAG) @map("market_fee_basis")
+  marketFeePercent Decimal        @default(0) @map("market_fee_percent") @db.Decimal(6, 2)
+  amaliEnabled     Boolean        @map("amali_enabled")
+  marketFeeEnabled Boolean        @map("market_fee_enabled")
   amaliAmount      Decimal    @map("amali_amount") @db.Decimal(14, 2)
   marketFeeAmount  Decimal    @map("market_fee_amount") @db.Decimal(14, 2)
   otherCharges     Decimal    @default(0) @map("other_charges") @db.Decimal(14, 2)

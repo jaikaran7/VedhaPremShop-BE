@@ -4,6 +4,13 @@ export const fromPaise = (paise: number): number => paise / 100;
 export const toGrams = (kg: number): number => Math.round(kg * 1000);
 export const fromGrams = (grams: number): number => grams / 1000;
 
+/** Next whole rupee, in paise. An exact rupee stays as it is. */
+export function ceilToRupeePaise(paise: number): number {
+  const remainder = paise % 100;
+  if (remainder === 0) return paise;
+  return paise + (100 - remainder);
+}
+
 /** round(kg × ₹/kg) to the whole rupee, half up — same rule as the frontend's saleLineAmount. Returns paise. */
 export function lineAmountPaise(grams: number, ratePaise: number): number {
   const scaled = grams * ratePaise; // units of ₹1e-5; inputs are bounded by DTO limits so this stays a safe integer
