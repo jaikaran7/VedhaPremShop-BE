@@ -25,6 +25,9 @@ type PurchaseRow = Prisma.PurchaseGetPayload<{ include: typeof INCLUDE }>;
 
 const num = (value: unknown) => Number(value);
 
+/** Ginger and garlic: no Amali or market fee on sales, and on purchases no receiving evaluation and no fixed expense types. */
+const isGeneralGoods = (product: { appliesSaleCharges: boolean }) => !product.appliesSaleCharges;
+
 /** Frontend `Purchase` shape. The receiving record is stored exactly as the frontend renders it. */
 function purchaseView(row: PurchaseRow) {
   return {
@@ -110,10 +113,18 @@ export class PurchasesService {
     }));
   }
 
-  /** Records what is owed to the vendor. No stock moves until the consignment is received. Any bill date is accepted. */
+  /**
+   * Records what is owed to the vendor. For onion no stock moves until the consignment is received. Ginger and garlic have no
+   * inspection or costing step, so what the bill says arrived goes straight into stock. Any bill date is accepted.
+   */
   async create(actor: Actor, dto: CreatePurchaseDto) {
     if (dto.receiptStatus === 'RECEIVED') throw new BadRequestException('A new vendor bill cannot be created as received. Save it, then receive the lot.');
-    const id = await this.db.$transaction((tx) => this.createInTx(tx, actor, dto), TX_OPTIONS).catch((error: unknown) => {
+    const id = await this.db.$transaction(async (tx) => {
+      const purchaseId = await this.createInTx(tx, actor, dto);
+      const product = await tx.product.findUniqueOrThrow({ where: { id: dto.productId }, select: { appliesSaleCharges: true } });
+      if (isGeneralGoods(product)) await this.receiveGeneralGoodsInTx(tx, actor, purchaseId);
+      return purchaseId;
+    }, TX_OPTIONS).catch((error: unknown) => {
       if (isUniqueViolation(error)) throw new ConflictException(`Bill ${dto.billNumber.trim()} is already recorded for this vendor.`);
       throw error;
     });
@@ -285,6 +296,39 @@ export class PurchasesService {
   }
 
   /**
+   * Ginger and garlic arrive without inspection, costing or selling-rate evaluation: every line of the bill goes into stock as
+   * written, and the selling rate is typed on the bill. The lot is created or extended, and the purchase is marked received.
+   */
+  private async receiveGeneralGoodsInTx(tx: Tx, actor: Actor, purchaseId: string): Promise<void> {
+    const purchase = await tx.purchase.findUniqueOrThrow({ where: { id: purchaseId }, include: { items: true, vendorParty: { select: { name: true } } } });
+    const today = businessDate(await orgTimezone(tx, actor.organizationId));
+    const lotId = await this.lotFor(tx, actor, purchase, today);
+    for (const item of purchase.items) {
+      const existing = await tx.lotMark.findUnique({ where: { lotId_markCode: { lotId, markCode: item.markCode } } });
+      // A variety already in the lot keeps its recorded purchase rate; a new one takes this bill's rate.
+      const lotMark = existing ?? await tx.lotMark.create({ data: {
+        organizationId: actor.organizationId, lotId, markCode: item.markCode,
+        initialBags: 0, initialWeightKg: 0, remainingBags: 0, remainingWeightKg: 0, purchaseRate: item.ratePerKg,
+      } });
+      await applyStockChange(tx, actor, {
+        lotMarkId: lotMark.id, type: 'PURCHASE_IN', bagsDelta: item.bags, gramsDelta: toGrams(num(item.weightKg)),
+        referenceType: 'PURCHASE', referenceId: purchase.id, reason: `Received ${purchase.lotNumber} from ${purchase.vendorParty.name}`,
+        movementDate: today, raisesInitial: true,
+      });
+    }
+    const receivedAt = new Date();
+    await tx.purchase.update({ where: { id: purchaseId }, data: {
+      receiptStatus: 'RECEIVED',
+      receivedAt,
+      receivingRecord: { receivedAt: receivedAt.toISOString(), stockPosted: true, calculationVersion: 2, expenses: [], groups: [], issues: [], generalGoods: true } as unknown as Prisma.InputJsonValue,
+    } });
+    await audit(tx, actor, {
+      action: 'RECEIVE_LOT', entity: 'PURCHASE', entityId: purchaseId,
+      details: `Received ${purchase.lotNumber}: ${purchase.items.reduce((total, item) => total + item.bags, 0)} bags posted from the bill`,
+    });
+  }
+
+  /**
    * Validates and prices a bill for create or edit: vendor and product exist and are active, qualities are not repeated, the
    * bill number is unused for this vendor, charges resolve to their master (one query for all) or a custom name.
    */
@@ -318,6 +362,7 @@ export class PurchasesService {
     }));
     const expenses = (dto.expenses ?? []).map((e, position) => {
       const isMaster = !!e.expenseTypeId && UUID.test(e.expenseTypeId);
+      if (isMaster && isGeneralGoods(product)) throw new UnprocessableEntityException(`${product.name} purchases take custom expenses only. Type a name and an amount.`);
       const master = isMaster ? masters.get(e.expenseTypeId as string) : undefined;
       if (isMaster && !master) throw new UnprocessableEntityException('Unknown purchase expense type.');
       if (master && master.status !== 'ACTIVE' && !editingId) throw new UnprocessableEntityException(`${master.name} is inactive and cannot be added to a new bill.`);

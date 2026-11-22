@@ -52,6 +52,37 @@ const receive = (p: PurchaseBody, body: unknown, token = manager) => h.http().po
 const movementsFor = (purchaseId: string) => h.db.stockMovement.findMany({ where: { referenceId: purchaseId, type: 'PURCHASE_IN' } });
 const transport = (amount: number) => ({ id: 'rx1', expenseTypeId: transportTypeId, expenseTypeName: 'Transport', amount, allocation: { method: 'BY_RECEIVED_KG' } });
 
+describe('ginger and garlic purchases', () => {
+  const generalBill = (over: Record<string, unknown> = {}) => bill({
+    billNumber: 'G-2001', productId: garlicId, lotNumber: 'gl new',
+    items: [{ markCode: 'desi', bags: 20, weightKg: 1000.5, ratePerKg: 80 }, { markCode: 'china', bags: 10, weightKg: 500, ratePerKg: 120 }],
+    expenses: [{ expenseTypeId: 'custom', expenseTypeName: 'Cartage', amount: 500 }],
+    ...over,
+  });
+
+  it('puts every variety straight into stock when the bill is saved, with no receiving step', async () => {
+    const res = await h.http().post('/api/v1/purchases').set(manager).send(generalBill()).expect(201);
+    // 1000.5 kg × ₹80 = ₹80,040 and 500 kg × ₹120 = ₹60,000, plus ₹500 cartage
+    expect(res.body).toMatchObject({ receiptStatus: 'RECEIVED', grossAmount: 140_040, totalExpenses: 500, netAmount: 140_540 });
+    const lot = (await lots()).find((l) => l.lotNumber === 'GL NEW')!;
+    expect(lot.marks).toHaveLength(2);
+    expect(lot.marks.find((m) => m.markCode === 'GLDESI' || m.markCode.endsWith('DESI'))).toMatchObject({ remainingBags: 20, remainingWeightKg: 1000.5, purchaseRate: 80 });
+    expect(await movementsFor(res.body.id)).toHaveLength(2);
+  });
+
+  it('takes custom expenses only, not the fixed expense types', async () => {
+    await h.http().post('/api/v1/purchases').set(manager).send(generalBill({ expenses: [{ expenseTypeId: scaleTypeId, amount: 100 }] })).expect(422);
+    expect(await h.db.stockMovement.count({ where: { type: 'PURCHASE_IN' } })).toBe(0);
+  });
+
+  it('adds to the same lot when a second bill brings more of a variety', async () => {
+    await h.http().post('/api/v1/purchases').set(manager).send(generalBill()).expect(201);
+    await h.http().post('/api/v1/purchases').set(manager).send(generalBill({ billNumber: 'G-2002', items: [{ markCode: 'desi', bags: 5, weightKg: 250, ratePerKg: 90 }], expenses: [] })).expect(201);
+    const lot = (await lots()).find((l) => l.lotNumber === 'GL NEW')!;
+    expect(lot.marks.find((m) => m.markCode.endsWith('DESI'))).toMatchObject({ remainingBags: 25, remainingWeightKg: 1250.5, purchaseRate: 80 });
+  });
+});
+
 describe('vendor bill', () => {
   it('computes amounts on the server, records the payable and posts no stock', async () => {
     const before = (await vendors()).find((v) => v.id === vendorId)!;
@@ -162,9 +193,9 @@ describe('receiving', () => {
     expect(after.purchaseRate).toBe(before.purchaseRate);
     expect(after.finalizedSellingRate).toBe(66); // 60 + 6
 
-    const garlic = await create({ billNumber: 'V-1004', lotNumber: 'LOT AP', productId: garlicId });
-    await receive(garlic, draft(garlic)).expect(409);
-    expect((await h.http().get(`/api/v1/purchases/${garlic.id}`).set(manager)).body.receiptStatus).toBe('PENDING_RECEIPT');
+    // Garlic is stocked as soon as the bill is saved, so the clash with the onion lot shows up on save and nothing is kept.
+    await h.http().post('/api/v1/purchases').set(manager).send(bill({ billNumber: 'V-1004', lotNumber: 'LOT AP', productId: garlicId, expenses: [] })).expect(409);
+    expect((await h.http().get('/api/v1/purchases').set(manager)).body.some((p: { billNumber: string }) => p.billNumber === 'V-1004')).toBe(false);
   });
 
   it('uses the costing settings in force: default margin and extra per-kg margins', async () => {

@@ -78,6 +78,14 @@ PKS (Punnari Kirana Store) sells onion, ginger and garlic. The owner wants:
 
 Each part is built, tested and pushed on its own.
 
+## Built (calls made while building)
+
+- The sale header keeps a required `productId`: the first line's product. `productName` lists every product ("Onions, Garlic"). Each sale line also stores its own product, name and whether fees applied. This is smaller than making the header optional.
+- One product flag, `appliesSaleCharges`, marks ginger and garlic as general goods. It switches off Amali and market fee on sales and also the receiving evaluation and fixed expense types on purchases.
+- A general-goods purchase is saved as received: stock goes in at save, in the same transaction. A lot number that already holds another product returns 409 at save.
+- Previous Balance on a bill is read from the customer ledger row just before that bill; Total Due is that plus the bill's own unpaid amount.
+- The migration is additive and creates GINGER and GARLIC for every shop that lacks them. It must be applied (`npm run db:migrate`) before this backend is deployed.
+
 ## Left to the builder
 
 - Exact migration for the product flag and the new line columns, including backfilling `productId` on existing sale items from their lots.
