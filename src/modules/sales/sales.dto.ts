@@ -37,7 +37,8 @@ export class TenderDto {
 export class CreateSaleDto {
   @ApiPropertyOptional({ description: 'Empty or omitted for a counter sale' })
   @IsOptional() @ValidateIf((_, v) => v !== '') @IsUUID() customerId?: string;
-  @ApiProperty() @IsUUID() productId!: string;
+  @ApiPropertyOptional({ description: 'Not needed any more: every line carries its own product through its lot, so one bill can mix onion, ginger and garlic.' })
+  @IsOptional() @IsUUID() productId?: string;
   @ApiProperty({ type: [SaleItemDto] })
   @IsArray() @ArrayMinSize(1) @ArrayMaxSize(50) @ValidateNested({ each: true }) @Type(() => SaleItemDto)
   items!: SaleItemDto[];

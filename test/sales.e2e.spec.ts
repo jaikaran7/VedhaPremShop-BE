@@ -44,8 +44,8 @@ const TOTAL = 10_584;
 const TWO_BAGS = 7_045;
 // 200 kg × ₹69 = ₹13,800; Amali ₹80; market fee ₹138 → ₹14,018
 const FOUR_BAGS = 14_018;
-// 80 kg × ₹100 = ₹8,000; Amali ₹40; market fee ₹80 → ₹8,120
-const GARLIC = 8_120;
+// 80 kg × ₹100 = ₹8,000. Garlic carries no Amali and no market fee.
+const GARLIC = 8_000;
 const paise = (rupees: number) => Math.round(rupees * 100);
 const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
 const daysAgo = (n: number) => { const d = new Date(`${today()}T00:00:00Z`); d.setUTCDate(d.getUTCDate() - n); return d.toISOString().slice(0, 10); };
@@ -102,7 +102,7 @@ describe('receipts and advances', () => {
 
     const general = await h.http().post('/api/v1/payments').set(owner).send({ customerId: customers['CUST-001']!.id, amount: 10_000, paymentMethod: 'CASH' }).expect(201);
     expect(general.body.billAllocations).toEqual([{ saleId: null, billNumber: null, amount: 10_000 }]);
-    expect(paise(await outstanding('CUST-001'))).toBe(14_658_319);
+    expect(paise(await outstanding('CUST-001'))).toBe(14_658_400); // 160,584 owed − 4,000 − 10,000
   });
 
   it('paying more than owed is accepted and kept as an advance that the next bill uses', async () => {
@@ -146,8 +146,8 @@ describe('stock and price guards', () => {
     await h.http().post('/api/v1/sales').set(cashier).send(sale({ items: [{ lotNumber: 'LOT AP', markCode: 'AA', ratePerKg: 30, bagWeights: bags(50) }] })).expect(201);
   });
 
-  it('rejects other-product lots and bad weighments', async () => {
-    await h.http().post('/api/v1/sales').set(cashier).send(sale({ items: [{ lotNumber: 'LOT GL', markCode: 'BOLD', ratePerKg: 90, bagWeights: bags(50) }] })).expect(422);
+  it('rejects unknown lots and bad weighments', async () => {
+    await h.http().post('/api/v1/sales').set(cashier).send(sale({ items: [{ lotNumber: 'LOT NONE', markCode: 'BOLD', ratePerKg: 90, bagWeights: bags(50) }] })).expect(404);
     await h.http().post('/api/v1/sales').set(cashier).send(sale({ items: [{ lotNumber: 'LOT AP', markCode: 'AA', ratePerKg: 69, bagWeights: bags(-5) }] })).expect(400);
     await h.http().post('/api/v1/sales').set(cashier).send(sale({ items: [{ lotNumber: 'LOT AP', markCode: 'AA', ratePerKg: 69, bagWeights: bags(50.1234) }] })).expect(400);
   });
@@ -313,13 +313,39 @@ describe('cancel and rebill', () => {
     expect(await customer('CUST-001')).toMatchObject({ advanceAmount: 0 });
   });
 
+  it('one bill holds onion and garlic: fees only on the onion lines, one sale, one ledger entry', async () => {
+    const onions = await lotMark('LOT AP', 'AA');
+    const garlic = await lotMark('LOT GL', 'BOLD');
+    const res = await h.http().post('/api/v1/sales').set(cashier).send(sale({
+      productId: undefined,
+      items: [
+        { lotNumber: 'LOT AP', markCode: 'AA', ratePerKg: 69, bagWeights: bags(50.5, 50, 50.5) },
+        { lotNumber: 'LOT GL', markCode: 'BOLD', ratePerKg: 100, bagWeights: bags(40, 40) },
+      ],
+    })).expect(201);
+    // onion 151 kg × ₹69 = ₹10,419 + garlic 80 kg × ₹100 = ₹8,000; Amali on 3 onion bags ₹60; market fee 1% of onion only ₹104.19.
+    // Exact ₹18,583.19, rounded up to ₹18,584, the lift sits on the market fee (₹105).
+    expect(res.body).toMatchObject({
+      productName: 'Onions, Garlic', totalBags: 5, totalWeightKg: 231, productSubtotal: 18_419, totalAmount: 18_584,
+      charges: { amaliAmount: 60, marketFeeAmount: 105, bagCount: 3, finalInvoiceAmount: 18_584 },
+    });
+    expect(res.body.items).toHaveLength(2);
+    expect(res.body.items.map((line: { productName: string; chargesApply: boolean }) => [line.productName, line.chargesApply]))
+      .toEqual([['Onions', true], ['Garlic', false]]);
+    expect(await lotMark('LOT AP', 'AA')).toMatchObject({ remainingBags: onions.remainingBags - 3 });
+    expect(await lotMark('LOT GL', 'BOLD')).toMatchObject({ remainingBags: garlic.remainingBags - 2, remainingWeightKg: garlic.remainingWeightKg - 80 });
+    expect(await outstanding('CUST-001')).toBe(150_000 + 18_584);
+    const ledger = (await h.http().get('/api/v1/customers/ledger').set(owner)).body as { referenceNo: string; type: string; customerId: string }[];
+    expect(ledger.filter((row) => row.type === 'SALE' && row.referenceNo === res.body.billNumber)).toHaveLength(1);
+  });
+
   it('changing the product updates the same bill: the old lot is restored and the new lot is drawn', async () => {
     const onions = await lotMark('LOT AP', 'AA');
     const garlic = await lotMark('LOT GL', 'BOLD');
     const products = (await h.http().get('/api/v1/settings/products').set(owner)).body as { id: string; code: string }[];
     const garlicId = products.find((p) => p.code === 'GARLIC')!.id;
     const bill = await h.http().post('/api/v1/sales').set(cashier).send(sale()).expect(201);
-    // 80 kg × ₹100 = ₹8,000; Amali ₹40; market fee 1% = ₹80 → ₹8,120
+    // 80 kg × ₹100 = ₹8,000, no Amali and no market fee on garlic
     const edited = {
       ...sale({ tenders: [], productId: garlicId }),
       items: [{ lotNumber: 'LOT GL', markCode: 'BOLD', ratePerKg: 100, bagWeights: bags(40, 40) }],

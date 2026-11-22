@@ -60,6 +60,40 @@ describe('priceBill', () => {
   });
 });
 
+describe('priceBill with lines that carry no fees', () => {
+  const mixed = [
+    { lotNumber: 'LOT AP', markCode: 'AA', ratePerKg: 69, bagWeights: bags(50.5, 50, 50.5) },
+    { lotNumber: 'LOT GL', markCode: 'BOLD', ratePerKg: 100, bagWeights: bags(40, 40), chargesApply: false },
+  ];
+
+  it('charges Amali and per-bag market fee only on the lines that carry them', () => {
+    const bill = priceBill(mixed, charges);
+    expect(bill.totalBags).toBe(5);
+    expect(bill.subtotalPaise).toBe(1_041_900 + 800_000);
+    expect(bill.amaliPaise).toBe(3 * 2000);
+    expect(bill.marketFeePaise).toBe(3 * 1000);
+  });
+
+  it('takes a percent market fee from the charged lines only, with the rounding lift on the fee', () => {
+    const bill = priceBill(mixed, { ...charges, marketFeeBasis: 'BILL_PERCENT' });
+    // 1% of 10,419 = 104.19; exact 18,583.19 rounds up to 18,584, lift goes onto the market fee
+    expect(bill.amaliPaise).toBe(6000);
+    expect(bill.totalPaise).toBe(1_858_400);
+    expect(bill.marketFeePaise).toBe(10_500);
+  });
+
+  it('charges nothing extra on a bill of only fee-free lines', () => {
+    const bill = priceBill([mixed[1]!], charges);
+    expect(bill.amaliPaise).toBe(0);
+    expect(bill.marketFeePaise).toBe(0);
+    expect(bill.totalPaise).toBe(800_000);
+  });
+
+  it('treats a missing flag as fees apply, so old callers price as before', () => {
+    expect(priceBill([mixed[0]!], charges).amaliPaise).toBe(6000);
+  });
+});
+
 describe('settle', () => {
   const base = { totalPaise: 1_000_000, saleDate: '2026-10-25', hasCustomer: true, creditDays: 7 };
 

@@ -1,5 +1,6 @@
 import { PrismaPg } from '@prisma/adapter-pg';
 import { toDbDate } from '../common/dates';
+import { NO_SALE_CHARGE_PRODUCT_CODES } from '../common/products';
 import { type CashAccountKind, type CollectionCategory, type CostingExpenseKind, PrismaClient, type PurchaseExpenseType, type QualityGrade, type UserRole } from '../generated/prisma/client';
 import type { Tx } from './prisma.service';
 import { hashPassword } from '../modules/auth/passwords';
@@ -96,7 +97,7 @@ export async function seedDevData(db: PrismaClient, password: string): Promise<{
 
     const productIds = new Map<string, string>();
     for (const p of fixture.products) {
-      const product = await tx.product.create({ data: { organizationId, code: p.code, name: p.name } });
+      const product = await tx.product.create({ data: { organizationId, code: p.code, name: p.name, appliesSaleCharges: !NO_SALE_CHARGE_PRODUCT_CODES.includes(p.code) } });
       productIds.set(p.key, product.id);
     }
     await tx.mark.createMany({ data: fixture.marks.map((m) => ({

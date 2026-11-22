@@ -7,7 +7,7 @@ import { isUniqueViolation } from '../../common/pg-error';
 import { PrismaService, TX_OPTIONS, type Tx } from '../../database/prisma.service';
 import type { Prisma } from '../../generated/prisma/client';
 import { settleCustomer } from '../payments/receivables';
-import { cancelBill, COUNTER_SALE, insertBill, loadCustomer, postBillFinancials, reviseSale, type BillCustomer } from './billing';
+import { cancelBill, COUNTER_SALE, insertBill, loadCustomer, lookupLineMarks, postBillFinancials, pricedItems, reviseSale, type BillCustomer } from './billing';
 import { chargeSettings, paymentStatusFor, priceBill } from './sales.calc';
 import { sameSaleLines, summarizeExistingSale } from './sale-match';
 import type { CreateSaleDto, SalesQueryDto } from './sales.dto';
@@ -202,6 +202,9 @@ export class SalesService {
         time: businessTime(org.timezone, sale.createdAt),
         items: sale.items.map((line) => ({
           id: line.id,
+          productId: line.productId,
+          productName: line.productName,
+          chargesApply: line.chargesApply,
           markCode: line.markCode,
           lotNumber: line.lotNumber,
           bags: line.bags,
@@ -220,7 +223,7 @@ export class SalesService {
           marketFeePercent: Number(sale.marketFeePercent),
           amaliEnabled: sale.amaliEnabled,
           marketFeeEnabled: sale.marketFeeEnabled,
-          bagCount: sale.totalBags,
+          bagCount: sale.items.filter((line) => line.chargesApply).reduce((sum, line) => sum + line.bags, 0),
           amaliAmount: Number(sale.amaliAmount),
           marketFeeAmount: Number(sale.marketFeeAmount),
           otherCharges: Number(sale.otherCharges),
@@ -263,7 +266,7 @@ export class SalesService {
     opts: { customer: BillCustomer | null; saleDate: string; org: Organization },
   ): Promise<void> {
     if (dto.confirmDuplicateSale) return;
-    const priced = priceBill(dto.items, chargeSettings(opts.org), { percent: dto.taxPercent, amount: dto.taxAmount });
+    const priced = priceBill(pricedItems(dto.items, await lookupLineMarks(tx, actor.organizationId, dto.items)), chargeSettings(opts.org), { percent: dto.taxPercent, amount: dto.taxAmount });
     const matches = await tx.sale.findMany({
       where: {
         organizationId: actor.organizationId,

@@ -49,14 +49,14 @@ it('buy, receive, sell, collect and pay the vendor: every balance tallies', asyn
     customerId: retailer.id, productId: onions.id, creditDays: 7, tenders: [{ method: 'CASH', amount: 2000 }],
     items: [{ lotNumber: '25 OCT TL', markCode: 'QA', ratePerKg: 47, bagWeights: [{ bagNumber: 1, weightKg: 50.5 }, { bagNumber: 2, weightKg: 50 }] }],
   }).expect(201)).body;
-  expect(sale).toMatchObject({ totalBags: 2, totalWeightKg: 100.5, productSubtotal: 4724, totalAmount: 4811.24, paidAmount: 2000, balanceDue: 2811.24, paymentStatus: 'PARTIAL' });
+  expect(sale).toMatchObject({ totalBags: 2, totalWeightKg: 100.5, productSubtotal: 4724, totalAmount: 4812, paidAmount: 2000, balanceDue: 2812, paymentStatus: 'PARTIAL' });
   expect(await lot()).toMatchObject({ remainingBags: 98, remainingWeightKg: 4899.5 });
-  expect(cents((await get<{ id: string; outstandingAmount: number }[]>('/customers', cashier)).find((c) => c.id === retailer.id)!.outstandingAmount)).toBe(cents(retailer.outstandingAmount) + 281_124);
+  expect(cents((await get<{ id: string; outstandingAmount: number }[]>('/customers', cashier)).find((c) => c.id === retailer.id)!.outstandingAmount)).toBe(cents(retailer.outstandingAmount) + 281_200);
 
   // 4. Retailer pays ₹1,000 by UPI -> still owes ₹1,811.24 of this bill.
   await h.http().post('/api/v1/payments').set(cashier).send({ customerId: retailer.id, amount: 1000, paymentMethod: 'UPI' }).expect(201);
   const retailerNow = (await get<{ id: string; outstandingAmount: number }[]>('/customers')).find((c) => c.id === retailer.id)!;
-  expect(cents(retailerNow.outstandingAmount)).toBe(cents(retailer.outstandingAmount + 2811.24 - 1000));
+  expect(cents(retailerNow.outstandingAmount)).toBe(cents(retailer.outstandingAmount + 2812 - 1000));
 
   // 5. We pay the bigger distributor ₹1,00,000 by UPI, and ₹500 diesel in cash.
   const category = (name: string) => categories.find((c) => c.name === name)!.id;

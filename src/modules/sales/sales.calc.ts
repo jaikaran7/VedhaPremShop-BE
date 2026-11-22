@@ -10,6 +10,8 @@ export interface LineInput {
   markCode: string;
   ratePerKg: number;
   bagWeights: { bagNumber: number; weightKg: number }[];
+  /** False for products that carry no Amali or market fee (ginger, garlic). Missing means the fees apply. */
+  chargesApply?: boolean;
 }
 
 export interface PricedLine extends LineInput {
@@ -98,8 +100,12 @@ export function priceBill(items: LineInput[], settings: ChargeSettings, tax?: Ta
   const totalBags = lines.reduce((sum, line) => sum + line.bags, 0);
   const totalGrams = lines.reduce((sum, line) => sum + line.grams, 0);
   const subtotalPaise = lines.reduce((sum, line) => sum + line.amountPaise, 0);
-  const amaliPaise = settings.amaliEnabled ? totalBags * toPaise(settings.amaliPerBag) : 0;
-  const exactMarketFeePaise = marketFeeFor(subtotalPaise, totalBags, settings);
+  // Amali and market fee are worked out on the lines that carry them; ginger and garlic add nothing.
+  const charged = lines.filter((line) => line.chargesApply !== false);
+  const chargedBags = charged.reduce((sum, line) => sum + line.bags, 0);
+  const chargedSubtotalPaise = charged.reduce((sum, line) => sum + line.amountPaise, 0);
+  const amaliPaise = settings.amaliEnabled ? chargedBags * toPaise(settings.amaliPerBag) : 0;
+  const exactMarketFeePaise = marketFeeFor(chargedSubtotalPaise, chargedBags, settings);
   const taxed = taxFor(subtotalPaise + amaliPaise + exactMarketFeePaise, tax);
   const exactPaise = subtotalPaise + amaliPaise + exactMarketFeePaise + taxed.taxPaise;
   const totalPaise = ceilToRupeePaise(exactPaise);

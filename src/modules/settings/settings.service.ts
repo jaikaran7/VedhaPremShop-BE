@@ -162,4 +162,4 @@ export class SettingsService {
   }
 }
 
-const productView = (row: Product) => ({ id: row.id, code: row.code, name: row.name, status: row.status });
+const productView = (row: Product) => ({ id: row.id, code: row.code, name: row.name, status: row.status, appliesSaleCharges: row.appliesSaleCharges });

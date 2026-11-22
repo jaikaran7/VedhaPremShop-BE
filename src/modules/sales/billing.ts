@@ -7,7 +7,7 @@ import type { Tx } from '../../database/prisma.service';
 import type { Organization, Prisma, SaleStatus } from '../../generated/prisma/client';
 import { applyStockChange } from '../inventory/stock-ledger';
 import { customerBalancePaise, lockCustomer, releaseSaleAllocations, settleCustomer } from '../payments/receivables';
-import { type PaymentMethod, chargeSettings, paymentStatusFor, priceBill, settle, stockDraws, type BillTotals } from './sales.calc';
+import { type LineInput, type PaymentMethod, chargeSettings, paymentStatusFor, priceBill, settle, stockDraws, type BillTotals } from './sales.calc';
 import type { CreateSaleDto } from './sales.dto';
 import { diffSale, type SaleSnapshot } from './sale-diff';
 
@@ -36,6 +36,55 @@ export interface PostedBill {
   tenders: Tender[];
 }
 
+
+/** A lot mark a bill line draws from, with the product it belongs to. */
+export interface LineMark {
+  id: string;
+  lotNumber: string;
+  markCode: string;
+  productId: string;
+  productName: string;
+  appliesSaleCharges: boolean;
+}
+
+const markKey = (lotNumber: string, markCode: string) => `${lotNumber.trim().toUpperCase()}|${markCode.trim().toUpperCase()}`;
+
+/** Finds the lot mark of every line in one query, however many lines or products the bill has. */
+export async function lookupLineMarks(tx: Tx, organizationId: string, items: { lotNumber: string; markCode: string }[]): Promise<LineMark[]> {
+  const pairs = [...new Map(items.map((item) => [markKey(item.lotNumber, item.markCode), item])).values()];
+  const marks = await tx.lotMark.findMany({
+    where: { organizationId, OR: pairs.map((item) => ({ markCode: item.markCode.trim().toUpperCase(), lot: { lotNumber: item.lotNumber.trim().toUpperCase() } })) },
+    include: { lot: { select: { lotNumber: true, product: { select: { id: true, name: true, appliesSaleCharges: true } } } } },
+  });
+  return marks.map((mark) => ({
+    id: mark.id, lotNumber: mark.lot.lotNumber, markCode: mark.markCode,
+    productId: mark.lot.product.id, productName: mark.lot.product.name, appliesSaleCharges: mark.lot.product.appliesSaleCharges,
+  }));
+}
+
+export function markOfLine(marks: LineMark[], line: { lotNumber: string; markCode: string }): LineMark {
+  const found = marks.find((mark) => markKey(mark.lotNumber, mark.markCode) === markKey(line.lotNumber, line.markCode));
+  if (!found) throw new NotFoundException(`${line.lotNumber} has no mark ${line.markCode}`);
+  return found;
+}
+
+/** The bill's lines with whether Amali and market fee apply to each, taken from the line's own product. */
+export function pricedItems(items: CreateSaleDto['items'], marks: LineMark[]): LineInput[] {
+  return items.map((item) => ({
+    lotNumber: item.lotNumber, markCode: item.markCode, ratePerKg: item.ratePerKg, bagWeights: item.bagWeights,
+    chargesApply: markOfLine(marks, item).appliesSaleCharges,
+  }));
+}
+
+/** The product on the bill header: the first line's, with every product's name when the bill mixes them ("Onion, Ginger"). */
+export function billProduct(lines: { lotNumber: string; markCode: string }[], marks: LineMark[]): { id: string; name: string } {
+  const lineMarks = lines.map((line) => markOfLine(marks, line));
+  const first = lineMarks[0];
+  if (!first) throw new UnprocessableEntityException('A bill needs at least one line');
+  const names = [...new Set(lineMarks.map((mark) => mark.productName))];
+  return { id: first.productId, name: names.join(', ') };
+}
+
 /** Locks and loads the billed customer (lock order: customer → sequences → lot marks). */
 export async function loadCustomer(tx: Tx, actor: Actor, customerId?: string | null): Promise<BillCustomer | null> {
   if (!customerId) return null;
@@ -57,10 +106,9 @@ export async function insertBill(tx: Tx, actor: Actor, org: Organization, input:
   replacesSaleId?: string;
   idempotencyKey?: string;
 }): Promise<PostedBill> {
-  const product = await tx.product.findFirst({ where: { id: input.productId, organizationId: actor.organizationId } });
-  if (!product) throw new NotFoundException('Product not found');
-
-  const bill = priceBill(input.items, chargeSettings(org), { percent: input.taxPercent, amount: input.taxAmount });
+  const marks = await lookupLineMarks(tx, actor.organizationId, input.items);
+  const product = billProduct(input.items, marks);
+  const bill = priceBill(pricedItems(input.items, marks), chargeSettings(org), { percent: input.taxPercent, amount: input.taxAmount });
   if (input.totalAmount !== undefined && toPaise(input.totalAmount) !== bill.totalPaise) {
     throw new ConflictException(`Bill total is ₹${fromPaise(bill.totalPaise)} with current rates and charges. Review the bill and confirm again.`);
   }
@@ -69,18 +117,7 @@ export async function insertBill(tx: Tx, actor: Actor, org: Organization, input:
     defaultCreditDays: opts.customer?.creditDays, saleDate: opts.saleDate, hasCustomer: !!opts.customer, carriedPaise: opts.carriedPaise,
   });
 
-  // One query for every line's lot mark, however many lines the bill has.
-  const wanted = stockDraws(bill.lines);
-  const marks = await tx.lotMark.findMany({
-    where: { organizationId: actor.organizationId, OR: wanted.map((d) => ({ markCode: d.markCode.trim().toUpperCase(), lot: { lotNumber: d.lotNumber.trim().toUpperCase() } })) },
-    include: { lot: { select: { lotNumber: true, productId: true } } },
-  });
-  const draws: { lotMarkId: string; lotNumber: string; markCode: string; bags: number; grams: number }[] = wanted.map((draw) => {
-    const found = marks.find((m) => m.markCode === draw.markCode.trim().toUpperCase() && m.lot.lotNumber === draw.lotNumber.trim().toUpperCase());
-    if (!found) throw new NotFoundException(`${draw.lotNumber} has no mark ${draw.markCode}`);
-    if (found.lot.productId !== product.id) throw new UnprocessableEntityException(`${found.lot.lotNumber} is not ${product.name} stock`);
-    return { ...draw, lotMarkId: found.id, lotNumber: found.lot.lotNumber, markCode: found.markCode };
-  });
+  const draws = drawsFor(bill.lines, marks);
   const lotMarkOf = (lotNumber: string, markCode: string) =>
     draws.find((d) => d.lotNumber === lotNumber.trim().toUpperCase() && d.markCode === markCode.trim().toUpperCase())!;
 
@@ -125,10 +162,14 @@ export async function insertBill(tx: Tx, actor: Actor, org: Organization, input:
     idempotencyKey: opts.idempotencyKey ?? null,
     items: { create: bill.lines.map((line, index) => {
       const draw = lotMarkOf(line.lotNumber, line.markCode);
+      const mark = markOfLine(marks, line);
       return {
         organizationId: actor.organizationId,
         lineNo: index + 1,
         lotMarkId: draw.lotMarkId,
+        productId: mark.productId,
+        productName: mark.productName,
+        chargesApply: mark.appliesSaleCharges,
         lotNumber: draw.lotNumber,
         markCode: draw.markCode,
         bags: line.bags,
@@ -252,9 +293,9 @@ export async function reviseSale(tx: Tx, actor: Actor, org: Organization, saleId
     throw new UnprocessableEntityException('The customer on this bill stays as billed. Cancel the bill to charge someone else.');
   }
   const customer = await loadCustomer(tx, actor, sale.customerPartyId);
-  const product = await tx.product.findFirst({ where: { id: dto.productId, organizationId: actor.organizationId } });
-  if (!product) throw new NotFoundException('Product not found');
-  const priced = priceBill(dto.items, chargeSettings(org), { percent: dto.taxPercent, amount: dto.taxAmount });
+  const marks = await lookupLineMarks(tx, actor.organizationId, dto.items);
+  const product = billProduct(dto.items, marks);
+  const priced = priceBill(pricedItems(dto.items, marks), chargeSettings(org), { percent: dto.taxPercent, amount: dto.taxAmount });
   if (dto.totalAmount !== undefined && toPaise(dto.totalAmount) !== priced.totalPaise) {
     throw new ConflictException(`Bill total is ₹${fromPaise(priced.totalPaise)} with current rates and charges. Review the bill and confirm again.`);
   }
@@ -270,11 +311,11 @@ export async function reviseSale(tx: Tx, actor: Actor, org: Organization, saleId
     totalPaise: priced.totalPaise, tenders: dto.tenders ?? [], creditDays: dto.creditDays,
     defaultCreditDays: customer?.creditDays ?? sale.creditDays ?? undefined, saleDate, hasCustomer: !!customer, carriedPaise: collectedPaise,
   });
-  const draws = await resolveDraws(tx, actor, product, priced.lines);
+  const draws = drawsFor(priced.lines, marks);
   const today = businessDate(org.timezone);
   await reverseBillStock(tx, actor, saleId, sale.billNumber, today, `edited: ${reason}`);
   await tx.saleItem.deleteMany({ where: { saleId } });
-  await tx.saleItem.createMany({ data: itemRows(actor, saleId, priced.lines, draws) });
+  await tx.saleItem.createMany({ data: itemRows(actor, saleId, priced.lines, draws, marks) });
   await tx.sale.update({ where: { id: saleId }, data: saleTotals(org, product, priced, dto.notes) });
   await takeStock(tx, actor, draws, saleId, today, `Dispatched for edited bill ${sale.billNumber} to ${customer?.name ?? COUNTER_SALE}`);
 
@@ -357,26 +398,22 @@ function saleTotals(org: Organization, product: { id: string; name: string }, pr
   };
 }
 
-async function resolveDraws(tx: Tx, actor: Actor, product: { id: string; name: string }, lines: BillTotals['lines']) {
-  const wanted = stockDraws(lines);
-  const marks = await tx.lotMark.findMany({
-    where: { organizationId: actor.organizationId, OR: wanted.map((draw) => ({ markCode: draw.markCode.trim().toUpperCase(), lot: { lotNumber: draw.lotNumber.trim().toUpperCase() } })) },
-    include: { lot: { select: { lotNumber: true, productId: true } } },
-  });
-  return wanted.map((draw) => {
-    const found = marks.find((mark) => mark.markCode === draw.markCode.trim().toUpperCase() && mark.lot.lotNumber === draw.lotNumber.trim().toUpperCase());
-    if (!found) throw new NotFoundException(`${draw.lotNumber} has no mark ${draw.markCode}`);
-    if (found.lot.productId !== product.id) throw new UnprocessableEntityException(`${found.lot.lotNumber} is not ${product.name} stock`);
-    return { ...draw, lotMarkId: found.id, lotNumber: found.lot.lotNumber, markCode: found.markCode };
+/** Lines that hit the same lot and mark draw on one stock row; they are taken together. */
+function drawsFor(lines: BillTotals['lines'], marks: LineMark[]) {
+  return stockDraws(lines).map((draw) => {
+    const found = markOfLine(marks, draw);
+    return { ...draw, lotMarkId: found.id, lotNumber: found.lotNumber, markCode: found.markCode };
   });
 }
 
-function itemRows(actor: Actor, saleId: string, lines: BillTotals['lines'], draws: { lotMarkId: string; lotNumber: string; markCode: string }[]) {
+function itemRows(actor: Actor, saleId: string, lines: BillTotals['lines'], draws: { lotMarkId: string; lotNumber: string; markCode: string }[], marks: LineMark[]) {
   return lines.map((line, index) => {
     const draw = draws.find((item) => item.lotNumber === line.lotNumber.trim().toUpperCase() && item.markCode === line.markCode.trim().toUpperCase());
     if (!draw) throw new NotFoundException(`${line.lotNumber} has no mark ${line.markCode}`);
+    const mark = markOfLine(marks, line);
     return {
       organizationId: actor.organizationId, saleId, lineNo: index + 1, lotMarkId: draw.lotMarkId,
+      productId: mark.productId, productName: mark.productName, chargesApply: mark.appliesSaleCharges,
       lotNumber: draw.lotNumber, markCode: draw.markCode, bags: line.bags,
       weightKg: String(fromGrams(line.grams)), ratePerKg: fromPaise(line.ratePaise), amount: fromPaise(line.amountPaise),
       bagWeights: line.bagWeights.map((bag) => ({ bagNumber: bag.bagNumber, weightKg: bag.weightKg })),

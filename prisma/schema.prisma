@@ -335,9 +335,12 @@ model Product {
   code           String
   name           String
   status         MasterStatus @default(ACTIVE)
+  /// Hamali (Amali) and market fee are charged on a bill's lines of this product. Off for ginger and garlic.
+  appliesSaleCharges Boolean  @default(true) @map("applies_sale_charges")
   createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
 
   organization     Organization      @relation(fields: [organizationId], references: [id])
+  saleItems        SaleItem[]
   lots             Lot[]
   sales            Sale[]
   purchases        Purchase[]
@@ -516,6 +519,11 @@ model SaleItem {
   saleId         String  @map("sale_id") @db.Uuid
   lineNo         Int     @map("line_no")
   lotMarkId      String  @map("lot_mark_id") @db.Uuid
+  /// The line's own product, so one bill can hold onion, ginger and garlic. Copied from the lot at billing time.
+  productId      String  @map("product_id") @db.Uuid
+  productName    String  @default("") @map("product_name")
+  /// Whether Amali and market fee were charged on this line when it was billed.
+  chargesApply   Boolean @default(true) @map("charges_apply")
   lotNumber      String  @map("lot_number")
   markCode       String  @map("mark_code")
   bags           Int
@@ -528,9 +536,11 @@ model SaleItem {
   organization Organization @relation(fields: [organizationId], references: [id])
   sale         Sale         @relation(fields: [saleId], references: [id])
   lotMark      LotMark      @relation(fields: [lotMarkId], references: [id])
+  product      Product      @relation(fields: [productId], references: [id])
 
   @@unique([saleId, lineNo])
   @@index([lotMarkId])
+  @@index([productId])
   @@map("sale_items")
 }
 
