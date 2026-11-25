@@ -430,3 +430,66 @@ describe('history', () => {
     expect((await h.http().get('/api/v1/stock/movements').set(owner)).body[0]).toMatchObject({ type: 'OPENING_STOCK', bags: 4, weightKg: 200 });
   });
 });
+
+describe('sales list filters', () => {
+  const list = (query: string) => h.http().get(`/api/v1/sales${query}`).set(cashier).expect(200);
+  const summary = (query: string) => h.http().get(`/api/v1/sales/summary${query}`).set(cashier).expect(200);
+
+  beforeEach(async () => {
+    await h.http().post('/api/v1/sales').set(cashier).send(sale({ tenders: [{ method: 'CASH', amount: TOTAL }] })).expect(201); // CUST-001, cash
+    await h.http().post('/api/v1/sales').set(cashier).send(sale({ customerId: customers['CUST-002']!.id })).expect(201); // credit
+    await h.http().post('/api/v1/sales').set(cashier).send(sale({ tenders: [{ method: 'UPI', amount: TOTAL }], date: daysAgo(3), dateReason: 'Entered late' })).expect(201); // UPI, 3 days ago
+  });
+
+  it('narrows by dates, payment type and bill number, and reports the matching count in X-Total-Count', async () => {
+    const all = await list('');
+    expect(all.body).toHaveLength(3);
+    expect(all.headers['x-total-count']).toBe('3');
+
+    const todayOnly = await list(`?from=${today()}&to=${today()}`);
+    expect(todayOnly.body).toHaveLength(2);
+    expect(todayOnly.headers['x-total-count']).toBe('2');
+
+    expect((await list('?paymentType=CASH')).body).toHaveLength(1);
+    expect((await list('?paymentType=UPI')).body).toHaveLength(1);
+    expect((await list('?paymentType=CREDIT')).body).toHaveLength(1);
+    expect((await list(`?paymentType=CASH&from=${daysAgo(5)}&to=${daysAgo(2)}`)).body).toHaveLength(0);
+
+    const bill = (all.body as { billNumber: string }[])[0]!.billNumber;
+    expect((await list(`?q=${bill.toLowerCase()}`)).body).toHaveLength(1);
+  });
+
+  it('pages the list but still reports every match in X-Total-Count', async () => {
+    const page = await list('?limit=1&offset=1');
+    expect(page.body).toHaveLength(1);
+    expect(page.headers['x-total-count']).toBe('3');
+  });
+
+  it('narrows by product; a bill with garlic and onions is found under both', async () => {
+    const products = (await h.http().get('/api/v1/settings/products').set(owner)).body as { id: string; code: string }[];
+    const garlicId = products.find((p) => p.code === 'GARLIC')!.id;
+    expect((await list(`?productId=${garlicId}`)).body).toHaveLength(0);
+    expect((await list(`?productId=${onionsId}`)).body).toHaveLength(3);
+  });
+
+  it('summarises the filtered bills without sending them', async () => {
+    expect((await summary(`?from=${today()}&to=${today()}`)).body).toEqual({ bills: 2, bags: 6, weightKg: 302, amount: TOTAL * 2 });
+    expect((await summary('?paymentType=CASH')).body).toMatchObject({ bills: 1, amount: TOTAL });
+  });
+
+  it('with withCredit, also totals what the bills still owe and how many bills owe it', async () => {
+    // beforeEach made one cash bill (paid), one credit bill (unpaid) and one UPI bill (paid).
+    expect((await summary('?withCredit=true')).body).toMatchObject({ bills: 3, amount: TOTAL * 3, creditAmount: TOTAL, creditBills: 1 });
+    expect((await summary('')).body).not.toHaveProperty('creditAmount');
+    expect((await summary('?withCredit=true&paymentType=CASH')).body).toMatchObject({ bills: 1, creditAmount: 0, creditBills: 0 });
+    // Receipts settle the oldest balance first, so pay off the customer's older balance and then 4,000 of this bill.
+    const owedNow = ((await h.http().get(`/api/v1/customers/${customers['CUST-002']!.id}`).set(owner)).body as { outstandingAmount: number }).outstandingAmount;
+    await h.http().post('/api/v1/payments').set(cashier).send({ customerId: customers['CUST-002']!.id, amount: owedNow - TOTAL + 4_000, paymentMethod: 'CASH' }).expect(201);
+    expect((await summary('?withCredit=true')).body).toMatchObject({ creditAmount: TOTAL - 4_000, creditBills: 1 });
+  });
+
+  it('rejects an unknown payment type and a product that is not an id', async () => {
+    await h.http().get('/api/v1/sales?paymentType=BITCOIN').set(cashier).expect(400);
+    await h.http().get('/api/v1/sales?productId=onions').set(cashier).expect(400);
+  });
+});

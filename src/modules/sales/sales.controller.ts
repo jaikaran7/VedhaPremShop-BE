@@ -1,4 +1,5 @@
-import { BadRequestException, Body, Controller, Get, Headers, HttpCode, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Headers, HttpCode, Param, ParseUUIDPipe, Post, Query, Res } from '@nestjs/common';
+import type { Response } from 'express';
 import { ApiHeader, ApiTags } from '@nestjs/swagger';
 import { type Actor, CurrentActor, Roles } from '../../common/auth/actor';
 import { ApprovalsService } from './approvals.service';
@@ -19,8 +20,16 @@ export function idempotencyKey(raw: string | undefined): string | undefined {
 export class SalesController {
   constructor(private readonly sales: SalesService) {}
 
-  @ApiEndpoint('List sales bills', 'Newest first, optionally limited to a from/to date range. Use limit and offset to page.')
-  @Get() list(@CurrentActor() a: Actor, @Query() q: SalesQueryDto) { return this.sales.list(a, q); }
+  @ApiEndpoint('List sales bills', 'Newest first, filtered by from/to dates, paymentType, productId and a bill number or customer search. Use limit and offset to page. The number of matching bills is returned in the X-Total-Count header.')
+  @Get()
+  async list(@CurrentActor() a: Actor, @Query() q: SalesQueryDto, @Res({ passthrough: true }) res: Response) {
+    const { rows, total } = await this.sales.listPage(a, q);
+    res.setHeader('X-Total-Count', String(total));
+    return rows;
+  }
+
+  @ApiEndpoint('Sales totals', 'Bill count, bags, weight and amount for the same filters as the list, without sending the bills. Cancelled and unapproved bills are not counted.')
+  @Get('summary') summary(@CurrentActor() a: Actor, @Query() q: SalesQueryDto) { return this.sales.summary(a, q); }
 
   @ApiEndpoint('List edited bills', 'Bills that have been corrected, newest edit first. Each bill includes every previous value and what it became.')
   @Get('edits') listEdits(@CurrentActor() a: Actor, @Query() q: ListQueryDto) { return this.sales.listEdits(a, q); }

@@ -81,9 +81,16 @@ export class ExpensesService {
   }
 
   /** Owner and Manager see every expense; a salesperson sees the ones they recorded themselves. */
-  async list(actor: Actor, limit: number, offset: number) {
+  async list(actor: Actor, limit: number, offset: number, range: { from?: string; to?: string } = {}) {
     const rows = await this.db.expense.findMany({
-      where: { organizationId: actor.organizationId, ...(!isManagement(actor) && { recordedByUserId: actor.userId }) }, include: INCLUDE,
+      where: {
+        organizationId: actor.organizationId,
+        ...(!isManagement(actor) && { recordedByUserId: actor.userId }),
+        ...((range.from || range.to) && {
+          expenseDate: { ...(range.from && { gte: new Date(`${range.from}T00:00:00Z`) }), ...(range.to && { lte: new Date(`${range.to}T00:00:00Z`) }) },
+        }),
+      },
+      include: INCLUDE,
       orderBy: [{ expenseDate: 'desc' }, { createdAt: 'desc' }], take: limit, skip: offset,
     });
     return rows.map((row) => expenseView(row));

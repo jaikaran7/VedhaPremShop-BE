@@ -11,6 +11,8 @@ import { cancelBill, COUNTER_SALE, insertBill, loadCustomer, lookupLineMarks, po
 import { chargeSettings, paymentStatusFor, priceBill } from './sales.calc';
 import { sameSaleLines, summarizeExistingSale } from './sale-match';
 import type { CreateSaleDto, SalesQueryDto } from './sales.dto';
+
+type SalesFilter = Pick<SalesQueryDto, 'from' | 'to' | 'paymentType' | 'productId' | 'q'>;
 import type { Organization } from '../../generated/prisma/client';
 
 /** How far a bill date may move from today. A bill on another day posts at once; it is recorded in the audit trail. */
@@ -161,17 +163,70 @@ export class SalesService {
     });
   }
 
+  /** The bills a list or summary covers: this organization, inside the dates, and matching the payment, product and search filters. */
+  private salesWhere(actor: Actor, query: SalesFilter, saleId?: string): Prisma.SaleWhereInput {
+    const search = query.q?.trim();
+    return {
+      organizationId: actor.organizationId,
+      ...(saleId && { id: saleId }),
+      ...((query.from || query.to) && {
+        saleDate: { ...(query.from && { gte: new Date(`${query.from}T00:00:00Z`) }), ...(query.to && { lte: new Date(`${query.to}T00:00:00Z`) }) },
+      }),
+      ...(query.paymentType && { paymentType: query.paymentType }),
+      ...(query.productId && { OR: [{ productId: query.productId }, { items: { some: { productId: query.productId } } }] }),
+      ...(search && {
+        AND: [{ OR: [{ billNumber: { contains: search, mode: 'insensitive' } }, { customerName: { contains: search, mode: 'insensitive' } }] }],
+      }),
+    };
+  }
+
+  /** One page of bills and how many bills match the filters in all. */
+  async listPage(actor: Actor, query: Pick<SalesQueryDto, 'limit' | 'offset'> & SalesFilter) {
+    const [rows, total] = await Promise.all([this.list(actor, query), this.db.sale.count({ where: this.salesWhere(actor, query) })]);
+    return { rows, total };
+  }
+
+  /**
+   * Totals for the filtered bills, counted on the database so a long range never has to be sent to the screen. Cancelled and
+   * unapproved bills are left out. With `withCredit`, also the part of those bills still unpaid and how many bills hold it.
+   */
+  async summary(actor: Actor, query: SalesFilter & { withCredit?: boolean }) {
+    const where: Prisma.SaleWhereInput = { ...this.salesWhere(actor, query), status: 'CONFIRMED' };
+    const totals = await this.db.sale.aggregate({
+      where,
+      _count: { _all: true },
+      _sum: { totalBags: true, totalWeightKg: true, totalAmount: true },
+    });
+    const base = {
+      bills: totals._count._all,
+      bags: totals._sum.totalBags ?? 0,
+      weightKg: Number(totals._sum.totalWeightKg ?? 0),
+      amount: Number(totals._sum.totalAmount ?? 0),
+    };
+    return query.withCredit ? { ...base, ...(await this.unpaidOf(where)) } : base;
+  }
+
+  /** What the matching bills still owe: each bill's total less what receipts have been applied to it, never below zero. */
+  private async unpaidOf(where: Prisma.SaleWhereInput) {
+    const bills = await this.db.sale.findMany({ where, select: { id: true, totalAmount: true } });
+    if (bills.length === 0) return { creditAmount: 0, creditBills: 0 };
+    const paid = await this.db.paymentAllocation.groupBy({ by: ['saleId'], where: { saleId: { in: bills.map((bill) => bill.id) } }, _sum: { amount: true } });
+    const paidBySale = new Map(paid.map((row) => [row.saleId, toPaise(Number(row._sum.amount ?? 0))]));
+    let unpaidPaise = 0;
+    let unpaidBills = 0;
+    for (const bill of bills) {
+      const owed = Math.max(0, toPaise(Number(bill.totalAmount)) - (paidBySale.get(bill.id) ?? 0));
+      unpaidPaise += owed;
+      if (owed > 0) unpaidBills += 1;
+    }
+    return { creditAmount: fromPaise(unpaidPaise), creditBills: unpaidBills };
+  }
+
   /** Bills with lines, counter receipts and live paid amount (Σ allocations), in a fixed number of queries. */
-  async list(actor: Actor, query: Pick<SalesQueryDto, 'limit' | 'offset' | 'from' | 'to'>, saleId?: string) {
+  async list(actor: Actor, query: Pick<SalesQueryDto, 'limit' | 'offset'> & SalesFilter, saleId?: string) {
     const org = await this.db.organization.findUniqueOrThrow({ where: { id: actor.organizationId }, select: { timezone: true } });
     const rows = await this.db.sale.findMany({
-      where: {
-        organizationId: actor.organizationId,
-        ...(saleId && { id: saleId }),
-        ...((query.from || query.to) && {
-          saleDate: { ...(query.from && { gte: new Date(`${query.from}T00:00:00Z`) }), ...(query.to && { lte: new Date(`${query.to}T00:00:00Z`) }) },
-        }),
-      },
+      where: this.salesWhere(actor, query, saleId),
       include: {
         items: { orderBy: { lineNo: 'asc' } },
         payments: { where: { kind: 'RECEIPT' }, orderBy: { createdAt: 'asc' }, select: { method: true, amount: true } },

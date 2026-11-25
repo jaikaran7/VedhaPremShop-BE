@@ -88,10 +88,16 @@ export class PaymentsService {
   }
 
   /** Receipts (positive) and counter refunds (negative), newest first, with the bills each one settled. */
-  async list(actor: Actor, limit: number, offset: number, paymentId?: string) {
+  async list(actor: Actor, limit: number, offset: number, paymentId?: string, range: { from?: string; to?: string } = {}) {
     const org = await this.db.organization.findUniqueOrThrow({ where: { id: actor.organizationId }, select: { timezone: true } });
     const rows = await this.db.payment.findMany({
-      where: { organizationId: actor.organizationId, ...(paymentId && { id: paymentId }) },
+      where: {
+        organizationId: actor.organizationId,
+        ...(paymentId && { id: paymentId }),
+        ...((range.from || range.to) && {
+          receivedOn: { ...(range.from && { gte: new Date(`${range.from}T00:00:00Z`) }), ...(range.to && { lte: new Date(`${range.to}T00:00:00Z`) }) },
+        }),
+      },
       include: { allocations: { include: { sale: { select: { billNumber: true } } }, orderBy: { createdAt: 'asc' } } },
       orderBy: { createdAt: 'desc' },
       take: limit,

@@ -29,7 +29,11 @@ export class RecordExpenseDto {
   @IsOptional() @IsIsoDate() nextPaymentDate?: string;
 }
 
-export class ExpensesQueryDto extends ListQueryDto {}
+/** Payments out dated on or between these dates. Leave both out for every one. */
+export class ExpensesQueryDto extends ListQueryDto {
+  @ApiPropertyOptional({ example: '2026-10-01' }) @IsOptional() @IsIsoDate() from?: string;
+  @ApiPropertyOptional({ example: '2026-10-31' }) @IsOptional() @IsIsoDate() to?: string;
+}
 
 export class SetOpeningBalanceDto {
   @ApiProperty({ description: 'Real money in this account at the start of `openingDate`.' })

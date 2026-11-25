@@ -32,8 +32,8 @@ export class ExpensesController {
   @ApiEndpoint('Create an expense category', 'Adds a category, optionally tracked as a collection category.', 201)
   @Post('expense-categories') createCategory(@CurrentActor() a: Actor, @Body() dto: CreateExpenseCategoryDto) { return this.expenses.createCategory(a, dto); }
 
-  @ApiEndpoint('List expenses', 'Recorded expenses, newest first. Use limit and offset to page.')
-  @Get('expenses') list(@CurrentActor() a: Actor, @Query() q: ExpensesQueryDto) { return this.expenses.list(a, q.limit, q.offset); }
+  @ApiEndpoint('List expenses', 'Recorded expenses, newest first, optionally only those dated between the from and to dates. Use limit and offset to page.')
+  @Get('expenses') list(@CurrentActor() a: Actor, @Query() q: ExpensesQueryDto) { return this.expenses.list(a, q.limit, q.offset, q); }
   @ApiEndpoint('Get one expense', 'A recorded expense, including remaining vendor due and receipt number when it is a vendor payment.')
   @Get('expenses/:id') get(@CurrentActor() a: Actor, @Param('id', ParseUUIDPipe) id: string) { return this.expenses.get(a, id); }
   @ApiEndpoint('Record an expense', 'Any staff member can record one, including for a past date; the cash book readjusts by itself.', 201)

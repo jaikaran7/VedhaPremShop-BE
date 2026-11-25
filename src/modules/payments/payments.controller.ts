@@ -1,9 +1,8 @@
 import { Body, Controller, Get, Headers, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import { ApiHeader, ApiTags } from '@nestjs/swagger';
 import { type Actor, CurrentActor } from '../../common/auth/actor';
-import { ListQueryDto } from '../../common/http/list-query.dto';
 import { idempotencyKey } from '../sales/sales.controller';
-import { RecordPaymentDto } from './payments.dto';
+import { PaymentsQueryDto, RecordPaymentDto } from './payments.dto';
 import { PaymentsService } from './payments.service';
 import { ApiEndpoint, ApiStandardErrors } from '../../common/http/swagger';
 
@@ -13,8 +12,8 @@ import { ApiEndpoint, ApiStandardErrors } from '../../common/http/swagger';
 export class PaymentsController {
   constructor(private readonly payments: PaymentsService) {}
 
-  @ApiEndpoint('List payments', 'Customer receipts, newest first. Use limit and offset to page.')
-  @Get() list(@CurrentActor() a: Actor, @Query() q: ListQueryDto) { return this.payments.list(a, q.limit, q.offset); }
+  @ApiEndpoint('List payments', 'Customer receipts, newest first, optionally only those received between the from and to dates. Use limit and offset to page.')
+  @Get() list(@CurrentActor() a: Actor, @Query() q: PaymentsQueryDto) { return this.payments.list(a, q.limit, q.offset, undefined, q); }
   @ApiEndpoint('Get a payment', 'One receipt with the bills it settled.')
   @Get(':id') get(@CurrentActor() a: Actor, @Param('id', ParseUUIDPipe) id: string) { return this.payments.get(a, id); }
 

@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsIn, IsInt, IsNumber, IsOptional, IsPositive, IsString, IsUUID,
   Length, Max, MaxLength, Min, ValidateIf, ValidateNested,
@@ -78,9 +78,19 @@ export class ProcessApprovalDto {
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(500) notes?: string;
 }
 
+/** What a bill list can be narrowed to: how it was paid, or that it is still on credit or part paid. */
+export const SALE_PAYMENT_FILTERS = [...PAYMENT_METHODS, 'SPLIT', 'CREDIT', 'PARTIAL'] as const;
+export type SalePaymentFilter = (typeof SALE_PAYMENT_FILTERS)[number];
+
+/** Filters run on the server; the number of matching bills comes back in `X-Total-Count`. */
 export class SalesQueryDto extends ListQueryDto {
   @ApiPropertyOptional({ example: '2026-10-01' }) @IsOptional() @IsIsoDate() from?: string;
   @ApiPropertyOptional({ example: '2026-10-31' }) @IsOptional() @IsIsoDate() to?: string;
+  @ApiPropertyOptional({ enum: SALE_PAYMENT_FILTERS }) @IsOptional() @IsIn(SALE_PAYMENT_FILTERS) paymentType?: SalePaymentFilter;
+  @ApiPropertyOptional({ description: 'Only bills that sold this product' }) @IsOptional() @IsUUID() productId?: string;
+  @ApiPropertyOptional({ description: 'Part of a bill number or customer name', example: 'VPN-INV-45' }) @IsOptional() @IsString() @Length(1, 80) q?: string;
+  @ApiPropertyOptional({ description: 'Summary only: also total the part of these bills not yet paid (given on credit)' })
+  @IsOptional() @Transform(({ value }) => value === 'true' || value === true) @IsBoolean() withCredit?: boolean;
 }
 
 export const IDEMPOTENCY_KEY = /^[\w-]{8,100}$/;

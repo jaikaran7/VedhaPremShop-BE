@@ -165,3 +165,30 @@ describe('the books tally', () => {
     expect(((await h.http().get(`/api/v1/customers/${c.id}`).set(owner)).body as { outstandingAmount: number }).outstandingAmount).toBe((cents(c.outstandingAmount) - cents(17_345.67)) / 100);
   });
 });
+
+describe('date filters on the payments and expenses lists', () => {
+  it('returns only the entries inside the dates, and everything when no dates are sent', async () => {
+    await h.http().post('/api/v1/expenses').set(manager).send(expense({ date: '2026-10-24', reference: 'Day one' })).expect(201);
+    await h.http().post('/api/v1/expenses').set(manager).send(expense({ date: '2026-10-25', reference: 'Day two' })).expect(201);
+    await h.http().post('/api/v1/expenses').set(manager).send(expense({ date: '2026-10-27', reference: 'Day four' })).expect(201);
+
+    const only = async (query: string) => ((await h.http().get(`/api/v1/expenses${query}`).set(manager).expect(200)).body as { reference: string }[]).map((e) => e.reference).sort();
+    expect(await only('')).toEqual(['Day four', 'Day one', 'Day two']);
+    expect(await only('?from=2026-10-25&to=2026-10-25')).toEqual(['Day two']);
+    expect(await only('?from=2026-10-25')).toEqual(['Day four', 'Day two']);
+    expect(await only('?to=2026-10-24')).toEqual(['Day one']);
+    expect(await only('?from=2026-10-28&to=2026-10-30')).toEqual([]);
+    await h.http().get('/api/v1/expenses?from=25-10-2026').set(manager).expect(400);
+
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+    const yesterday = new Date(`${today}T00:00:00Z`);
+    yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+    const customer = ((await h.http().get('/api/v1/customers').set(owner)).body as { id: string }[])[0]!;
+    await h.http().post('/api/v1/payments').set(owner).send({ customerId: customer.id, amount: 500, paymentMethod: 'CASH' }).expect(201);
+    const receipts = async (query: string) => ((await h.http().get(`/api/v1/payments${query}`).set(owner).expect(200)).body as unknown[]).length;
+    expect(await receipts('')).toBe(1);
+    expect(await receipts(`?from=${today}&to=${today}`)).toBe(1);
+    expect(await receipts(`?from=${yesterday.toISOString().slice(0, 10)}&to=${yesterday.toISOString().slice(0, 10)}`)).toBe(0);
+    await h.http().get('/api/v1/payments?to=not-a-date').set(owner).expect(400);
+  });
+});
