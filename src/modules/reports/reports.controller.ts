@@ -43,7 +43,7 @@ export class ReportsController {
       this.customers.list(a),
       this.vendors.list(a),
       this.inventory.listLots(a),
-      this.purchases.list(a, SNAPSHOT_ROWS, 0),
+      this.purchases.list(a, { limit: SNAPSHOT_ROWS, offset: 0 }),
     ]);
     return { sales, payments, customers, vendors, lots, purchases };
   }

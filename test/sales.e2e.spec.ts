@@ -259,13 +259,14 @@ describe('cancel and rebill', () => {
     const prisma = h.app.get(PrismaService);
     const before = prisma.queryCount;
     const listed = await h.http().get('/api/v1/sales/edits').set(cashier).expect(200);
-    // Grouping, the sale page, and its revision rows. The count stays fixed as the page grows.
-    expect(prisma.queryCount - before).toBe(3);
+    // Grouping, the sale page, its revision rows and its lot numbers. The count stays fixed as the page grows.
+    expect(prisma.queryCount - before).toBe(4);
     expect(listed.body.map((bill: { id: string }) => bill.id)).toEqual([second.body.id, first.body.id]);
     expect(listed.body[0]).toMatchObject({
       billNumber: second.body.billNumber,
       customerName: second.body.customerName,
       revisionCount: 1,
+      lotNumbers: ['LOT AP'],
       revisions: [expect.objectContaining({ reason: 'Short by one bag', editedByRole: 'OWNER' })],
     });
     expect(listed.body[0].revisions[0].changes).toEqual(expect.arrayContaining([

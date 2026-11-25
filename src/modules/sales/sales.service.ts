@@ -138,6 +138,7 @@ export class SalesService {
       where: { organizationId: actor.organizationId, id: { in: groups.map((group) => group.saleId) } },
       select: {
         id: true, billNumber: true, customerName: true, saleDate: true, totalBags: true, totalWeightKg: true, totalAmount: true, status: true,
+        items: { select: { lotNumber: true } },
         revisions: {
           orderBy: { revisionNo: 'desc' },
           select: { id: true, revisionNo: true, editedByName: true, editedByRole: true, reason: true, changes: true, before: true, after: true, createdAt: true },
@@ -158,6 +159,7 @@ export class SalesService {
         totalAmount: Number(sale.totalAmount),
         status: sale.status,
         revisionCount: group._count._all,
+        lotNumbers: [...new Set(sale.items.map((item) => item.lotNumber))].sort(),
         revisions: sale.revisions.map((revision) => revisionView(revision)),
       }];
     });

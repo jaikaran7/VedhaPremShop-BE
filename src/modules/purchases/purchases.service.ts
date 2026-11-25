@@ -8,7 +8,7 @@ import { PrismaService, TX_OPTIONS, type Tx } from '../../database/prisma.servic
 import { Prisma } from '../../generated/prisma/client';
 import { applyStockChange, orgTimezone } from '../inventory/stock-ledger';
 import { loadCostingInputs } from '../settings/costing.service';
-import type { CreatePurchaseDto, ReceivePurchaseDto, UpdatePurchaseDto } from './purchases.dto';
+import type { CreatePurchaseDto, PurchasesQueryDto, ReceivePurchaseDto, UpdatePurchaseDto } from './purchases.dto';
 import { type BillSnapshotInput, diffBill } from './purchase-diff';
 import { composeMarkCode, lotCodeFromNumber } from './lot-mark';
 import { appliedSellingRate, type DraftGroup, evaluateReceiving, takenInspectionQuantity } from './receiving.calc';
@@ -86,15 +86,40 @@ interface PricedBill {
 export class PurchasesService {
   constructor(private readonly db: PrismaService) {}
 
-  async list(actor: Actor, limit: number, offset: number) {
+  private listWhere(actor: Actor, query: Omit<PurchasesQueryDto, 'limit' | 'offset'>): Prisma.PurchaseWhereInput {
+    const search = query.q?.trim();
+    return {
+      organizationId: actor.organizationId,
+      ...((query.from || query.to) && {
+        purchaseDate: { ...(query.from && { gte: new Date(`${query.from}T00:00:00Z`) }), ...(query.to && { lte: new Date(`${query.to}T00:00:00Z`) }) },
+      }),
+      ...(query.vendorId && { vendorPartyId: query.vendorId }),
+      ...(query.productId && { productId: query.productId }),
+      ...(search && {
+        OR: [
+          { billNumber: { contains: search, mode: 'insensitive' } },
+          { lotNumber: { contains: search, mode: 'insensitive' } },
+          { vendorParty: { name: { contains: search, mode: 'insensitive' } } },
+        ],
+      }),
+    };
+  }
+
+  async list(actor: Actor, query: Pick<PurchasesQueryDto, 'limit' | 'offset'> & Omit<PurchasesQueryDto, 'limit' | 'offset'>) {
     const rows = await this.db.purchase.findMany({
-      where: { organizationId: actor.organizationId },
+      where: this.listWhere(actor, query),
       include: INCLUDE,
       orderBy: [{ purchaseDate: 'desc' }, { createdAt: 'desc' }],
-      take: limit,
-      skip: offset,
+      take: query.limit,
+      skip: query.offset,
     });
     return rows.map(purchaseView);
+  }
+
+  /** One page of bills and how many bills match the filters in all. */
+  async listPage(actor: Actor, query: PurchasesQueryDto) {
+    const [rows, total] = await Promise.all([this.list(actor, query), this.db.purchase.count({ where: this.listWhere(actor, query) })]);
+    return { rows, total };
   }
 
   async get(actor: Actor, id: string) {

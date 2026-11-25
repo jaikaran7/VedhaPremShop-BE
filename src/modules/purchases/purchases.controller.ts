@@ -1,8 +1,8 @@
-import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Put, Query, Res } from '@nestjs/common';
+import type { Response } from 'express';
 import { ApiTags } from '@nestjs/swagger';
 import { type Actor, CurrentActor } from '../../common/auth/actor';
-import { ListQueryDto } from '../../common/http/list-query.dto';
-import { CreatePurchaseDto, ReceivePurchaseDto, UpdatePurchaseDto } from './purchases.dto';
+import { CreatePurchaseDto, PurchasesQueryDto, ReceivePurchaseDto, UpdatePurchaseDto } from './purchases.dto';
 import { PurchasesService } from './purchases.service';
 import { ApiEndpoint, ApiStandardErrors } from '../../common/http/swagger';
 
@@ -16,8 +16,13 @@ import { ApiEndpoint, ApiStandardErrors } from '../../common/http/swagger';
 export class PurchasesController {
   constructor(private readonly purchases: PurchasesService) {}
 
-  @ApiEndpoint('List vendor bills', 'Newest first. Use limit and offset to page.')
-  @Get() list(@CurrentActor() a: Actor, @Query() q: ListQueryDto) { return this.purchases.list(a, q.limit, q.offset); }
+  @ApiEndpoint('List vendor bills', 'Newest first, filtered by from/to dates, vendorId, productId and a bill number, lot number or vendor search. Use limit and offset to page. The number of matching bills is returned in the X-Total-Count header.')
+  @Get()
+  async list(@CurrentActor() a: Actor, @Query() q: PurchasesQueryDto, @Res({ passthrough: true }) res: Response) {
+    const { rows, total } = await this.purchases.listPage(a, q);
+    res.setHeader('X-Total-Count', String(total));
+    return rows;
+  }
   @ApiEndpoint('Get a vendor bill', 'One bill with its items, charges and receiving record.')
   @Get(':id') get(@CurrentActor() a: Actor, @Param('id', ParseUUIDPipe) id: string) { return this.purchases.get(a, id); }
 

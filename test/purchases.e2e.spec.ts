@@ -246,3 +246,26 @@ describe('reports snapshot', () => {
     await h.http().get('/api/v1/reports/differential').set(cashier).expect(403);
   });
 });
+
+describe('vendor bill list filters', () => {
+  it('pages, and filters by date, vendor, product and search, with the match count in a header', async () => {
+    const before = Number((await h.http().get('/api/v1/purchases').set(owner)).headers['x-total-count']);
+    await create({ billNumber: 'V-2001', date: '2026-10-01', lotNumber: 'lot aa', items: [{ markCode: 'aa', bags: 5, weightKg: 250, ratePerKg: 30 }] });
+    await create({ billNumber: 'V-2002', date: '2026-10-20', lotNumber: 'lot bb', items: [{ markCode: 'bb', bags: 5, weightKg: 250, ratePerKg: 30 }] });
+    const get = (query: string) => h.http().get(`/api/v1/purchases?${query}`).set(owner).expect(200);
+
+    const all = await get('limit=1');
+    expect(all.body).toHaveLength(1);
+    expect(all.headers['x-total-count']).toBe(String(before + 2));
+
+    const dated = await get('from=2026-10-15&to=2026-10-31&q=V-200');
+    expect((dated.body as { billNumber: string }[]).map((p) => p.billNumber)).toEqual(['V-2002']);
+    expect(dated.headers['x-total-count']).toBe('1');
+
+    expect(Number((await get(`vendorId=${vendorId}`)).headers['x-total-count'])).toBeGreaterThanOrEqual(2);
+    expect((await get(`productId=${garlicId}&q=V-200`)).headers['x-total-count']).toBe('0');
+    expect(((await get('q=v-2001')).body as { billNumber: string }[]).map((p) => p.billNumber)).toEqual(['V-2001']);
+    expect(((await get('q=lot%20bb')).body as { billNumber: string }[]).map((p) => p.billNumber)).toEqual(['V-2002']);
+    expect(Number((await get('q=murade')).headers['x-total-count'])).toBeGreaterThanOrEqual(2);
+  });
+});

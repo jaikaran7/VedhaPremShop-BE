@@ -30,7 +30,7 @@ export class ReportsService {
     return this.cache.get(actor.organizationId, 'report:differential', REPORT_TTL_MS, async () => {
       const [lots, purchases, sales, movements, products] = await Promise.all([
         this.inventory.listLots(actor),
-        this.purchases.list(actor, ROWS, 0),
+        this.purchases.list(actor, { limit: ROWS, offset: 0 }),
         this.sales.list(actor, { limit: ROWS, offset: 0 }),
         // Only adjustments and opening stock feed the report; sales and receipts are already in the bills.
         this.inventory.listMovements(actor, { limit: 20_000, offset: 0, type: ['ADJUSTMENT_ADD', 'ADJUSTMENT_SUB', 'OPENING_STOCK'] }),

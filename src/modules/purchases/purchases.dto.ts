@@ -6,8 +6,18 @@ import {
 } from 'class-validator';
 import { BagWeightDto } from '../sales/sales.dto';
 import { IsIsoDate } from '../../common/http/is-iso-date';
+import { ListQueryDto } from '../../common/http/list-query.dto';
 
 const money = { maxDecimalPlaces: 2 };
+
+/** Filters run on the server; the number of matching bills comes back in `X-Total-Count`. */
+export class PurchasesQueryDto extends ListQueryDto {
+  @ApiPropertyOptional({ example: '2026-10-01' }) @IsOptional() @IsIsoDate() from?: string;
+  @ApiPropertyOptional({ example: '2026-10-31' }) @IsOptional() @IsIsoDate() to?: string;
+  @ApiPropertyOptional({ description: 'Only this vendor' }) @IsOptional() @IsUUID() vendorId?: string;
+  @ApiPropertyOptional({ description: 'Only this product (onion, ginger, garlic)' }) @IsOptional() @IsUUID() productId?: string;
+  @ApiPropertyOptional({ description: 'Part of a bill number, lot number or vendor name' }) @IsOptional() @IsString() @Length(1, 80) q?: string;
+}
 const EXPENSE_TYPES = ['FREIGHT', 'HAMALI', 'MANDI_TAX', 'COMMISSION', 'OTHER'] as const;
 
 export class PurchaseItemDto {
