@@ -19,6 +19,7 @@ Code: `src/modules/consignment-scans/reconciliation.calc.ts` (pure, integer pais
 |---|---|
 | `MISSING_FIELD` (vendor, product, lot, bill no., bill date), `NO_BILL_LINES`, `NO_MARKS` | CRITICAL |
 | `RATE_UNIT_UNKNOWN` (with evidence), `RATE_UNIT_PER_BAG_UNSUPPORTED`, `RATE_PRECISION` | CRITICAL |
+| `RATE_UNIT_MISMATCH` — the printed amounts prove a different convention from the one selected; reported once instead of once per line. A new read defaults to the vendor's saved convention, else per 10 kg (420 = ₹42.00/kg) | CRITICAL |
 | `LINE_AMOUNT_MISMATCH` — printed amount ≠ weight × rate under the chosen convention | CRITICAL |
 | `BILL_BAGS/WEIGHT/GROSS/EXPENSES/NET_MISMATCH`, `SHEET_BAGS_MISMATCH`, `BILL_SHEET_BAGS_MISMATCH` | CRITICAL (`*_NOT_READ` WARNING) |
 | `LINE_UNMATCHED`, `MARK_SHORT`, `MARK_OVER`, `RANGE_OVERFLOW` | CRITICAL |

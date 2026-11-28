@@ -113,7 +113,9 @@ describe('process → review → confirm', () => {
     expect(scan.lotNumber).toBe('22102026 KA56');
     expect(scan.status).toBe('NEEDS_REVIEW');
     expect(scan.reconciliation.rateUnitEvidence.suggested).toBe('PER_10_KG');
-    expect(codes(scan)).toEqual(expect.arrayContaining(['RATE_UNIT_UNKNOWN', 'MISSING_FIELD', 'LINE_UNMATCHED', 'MARK_SHORT']));
+    expect(scan.rateUnit).toBe('PER_10_KG');
+    expect(codes(scan)).not.toContain('LINE_AMOUNT_MISMATCH');
+    expect(codes(scan)).toEqual(expect.arrayContaining(['MISSING_FIELD', 'LINE_UNMATCHED', 'MARK_SHORT']));
     expect(scan.lines.filter((l) => l.provenance === 'UNRESOLVED')).toHaveLength(9);
   });
 

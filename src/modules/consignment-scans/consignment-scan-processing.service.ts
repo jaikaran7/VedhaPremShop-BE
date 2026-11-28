@@ -11,7 +11,7 @@ import { type Confidence, type Field, type MarkSheetOut, type VendorBillOut } fr
 import { type ExtractionJob, type ExtractionPage, ExtractionError, DocumentExtractor } from './extraction/document.extractor';
 import { PROMPT_VERSION } from './extraction/prompts';
 import { DOCX, officeText, type ScanFileType, XLSX } from './file-validation';
-import { normalizeMark } from './reconciliation.calc';
+import { DEFAULT_RATE_UNIT, normalizeMark } from './reconciliation.calc';
 import { lockScan, recalculate, snapshotVersion } from './scan-store';
 
 const RANK: Record<Confidence, number> = { HIGH: 0, MEDIUM: 1, LOW: 2 };
@@ -204,7 +204,7 @@ export class ConsignmentScanProcessingService {
 
   /**
    * Fills empty header choices from what was read, only when unambiguous: the one vendor whose name matches, the
-   * organization's only active product, the vendor's known rate convention, and a lot number from the bill date and lot reference.
+   * organization's only active product, the vendor's known rate convention (else per 10 kg), and a lot number from the bill date and lot reference.
    */
   private async prefill(tx: Tx, actor: Actor, scanId: string): Promise<void> {
     const scan = await tx.consignmentScan.findUniqueOrThrow({ where: { id: scanId } });
@@ -214,10 +214,12 @@ export class ConsignmentScanProcessingService {
       const wanted = letters(scan.vendorNameText);
       const vendors = await tx.vendor.findMany({ where: { organizationId: actor.organizationId, status: 'ACTIVE' }, select: { partyId: true, billRateUnit: true, party: { select: { name: true } } } });
       const hits = vendors.filter((v) => wanted.length > 3 && letters(v.party.name) === wanted);
-      if (hits.length === 1) {
-        data.vendorPartyId = hits[0]?.partyId;
-        if (!scan.rateUnit && hits[0]?.billRateUnit) data.rateUnit = hits[0].billRateUnit;
-      }
+      if (hits.length === 1) data.vendorPartyId = hits[0]?.partyId;
+    }
+    if (!scan.rateUnit) {
+      const vendorId = scan.vendorPartyId ?? (data.vendorPartyId as string | undefined);
+      const vendor = vendorId ? await tx.vendor.findFirst({ where: { partyId: vendorId, organizationId: actor.organizationId }, select: { billRateUnit: true } }) : null;
+      data.rateUnit = vendor?.billRateUnit ?? DEFAULT_RATE_UNIT;
     }
     if (!scan.productId) {
       const products = await tx.product.findMany({ where: { organizationId: actor.organizationId, status: 'ACTIVE' }, select: { id: true }, take: 2 });

@@ -6,6 +6,8 @@ import { formatRupees, fromPaise, lineAmountPaise } from '../../common/money';
 
 export type RateUnit = 'PER_KG' | 'PER_10_KG' | 'PER_BAG';
 export const RATE_UNITS: readonly RateUnit[] = ['PER_KG', 'PER_10_KG', 'PER_BAG'];
+/** How these vendors print rates: the last digit is a decimal of the per-kg rate (420 = ₹42.00 per kg). */
+export const DEFAULT_RATE_UNIT: RateUnit = 'PER_10_KG';
 export type Severity = 'CRITICAL' | 'WARNING' | 'INFO';
 export type MatchMethod = 'MANUAL' | 'EXACT' | 'GROUPED' | 'RANGE';
 
@@ -383,12 +385,23 @@ function rateUnitIssues(input: ReconcileInput, evidence: Reconciliation['rateUni
   if (unit === 'PER_BAG') {
     issues.push({ code: 'RATE_UNIT_PER_BAG_UNSUPPORTED', severity: 'CRITICAL', message: 'Purchase lines are priced per kg, so a per-bag bill cannot be posted from a scan yet. Enter it as a vendor bill by hand.' });
   }
+  // When the amounts prove another convention, the setting is wrong, not the lines that fit it.
+  const proven = evidence.suggested && evidence.suggested !== unit ? evidence.suggested : null;
+  const fitting = proven ? input.lines.filter((l) => expectedAmountPaise(l, proven) === l.amountPaise && expectedAmountPaise(l, unit) !== l.amountPaise) : [];
+  if (proven && fitting.length) {
+    issues.push({
+      code: 'RATE_UNIT_MISMATCH', severity: 'CRITICAL',
+      message: `Rates are set to ${RATE_LABEL[unit]}, but the printed amounts fit ${RATE_LABEL[proven]} on ${evidence.agreeing[proven]} of ${evidence.checked} lines. Change "Bill rates are quoted" to ${RATE_LABEL[proven]}; the amounts do not need correcting.`,
+      refs: { lineIds: fitting.map((l) => l.id) },
+    });
+  }
+  const checkUnit = proven ?? unit;
   for (const line of input.lines) {
-    const expected = expectedAmountPaise(line, unit);
+    const expected = expectedAmountPaise(line, checkUnit);
     if (expected !== line.amountPaise) {
       issues.push({
         code: 'LINE_AMOUNT_MISMATCH', severity: 'CRITICAL',
-        message: `${lineLabel(line)}: printed amount ${rupees(line.amountPaise)}, but ${line.grams / 1000} kg at ${rateText(line.ratePaise)} ${RATE_LABEL[unit]} is ${rupees(expected)}. Correct the misread value.`,
+        message: `${lineLabel(line)}: printed amount ${rupees(line.amountPaise)}, but ${line.grams / 1000} kg at ${rateText(line.ratePaise)} ${RATE_LABEL[checkUnit]} is ${rupees(expected)}. Correct the misread value.`,
         refs: { lineIds: [line.id] },
       });
     }

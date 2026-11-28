@@ -126,6 +126,15 @@ describe('reconcile — rules', () => {
     expect(reconcile({ ...input, header: { ...input.header, vendorPartyId: null, billNumber: ' ' } }).issues.filter((i) => i.code === 'MISSING_FIELD')).toHaveLength(2);
   });
 
+  it('reports a wrong rate unit once, and still flags a line that fits no unit', () => {
+    // 420 means ₹42.00 per kg: the amounts fit per 10 kg, but per kg is selected.
+    const lines = [line(1, 31, 1556, 440, 68_464), line(2, 3, 148, 420, 6216), line(3, 7, 333, 420, 13_986), line(4, 23, 1169, 425, 49_682.5), line(5, 1, 49, 490, 999)];
+    const r = reconcile(base(lines, []));
+    expect(r.issues.filter((i) => i.code === 'RATE_UNIT_MISMATCH')).toEqual([expect.objectContaining({ severity: 'CRITICAL', refs: { lineIds: ['L1', 'L2', 'L3', 'L4'] } })]);
+    expect(r.issues.filter((i) => i.code === 'LINE_AMOUNT_MISMATCH').map((i) => i.refs?.lineIds)).toEqual([['L5']]);
+    expect(r.canConfirm).toBe(false);
+  });
+
   it('subset search prefers earlier lines and returns null when no combination fits', () => {
     expect(subsetWithBags([{ bags: 2 }, { bags: 3 }, { bags: 5 }], 5)).toEqual([0, 1]);
     expect(subsetWithBags([{ bags: 2 }, { bags: 4 }], 5)).toBeNull();
